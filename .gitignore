@@ -1,0 +1,38 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+
+# Third-party binaries, each of which is over GitHub's 100 MB per-file limit.
+# See the README: these are fetched into resources/, not committed.
+resources/mpv/*.exe
+resources/ffmpeg/*.exe
+resources/**/*.dll
+
+# Local scratch, agent state and one-off dumps — never part of the app
+.shots/
+.tmp/
+.refs/
+.claude/
+tomakezip/
+tomakezip.zip
+*.log
+typecheck_out.txt
+MusicTree.txt
+x.png
+connected-components
+
+# Credentials, if any are ever added
+.env
+.env.*
+
+# Typeface files. Both faces the app uses are licensed to the person who bought
+# them, not to the project, so they are not redistributed here — drop your own
+# copies into this folder and the CSS picks them up, or let it fall through to
+# system-ui. See src/assets/fonts/README.md.
+src/assets/fonts/*.otf
+src/assets/fonts/*.ttf
+src/assets/fonts/*.woff
+src/assets/fonts/*.woff2

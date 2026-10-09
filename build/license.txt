@@ -1,0 +1,5 @@
+ChaosX
+
+Copyright (c) 2025 ChaosX. All rights reserved.
+
+This software is provided for personal use only.

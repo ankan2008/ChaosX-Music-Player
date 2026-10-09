@@ -1,0 +1,796 @@
+/* ============================================================
+   GLASS SURFACES
+   Panels and cards are translucent + backdrop-blurred. The
+   refractive "liquid glass" (WebGL) treatment is reserved for
+   the player pill via the shader; everything else is frosted.
+   No hard white borders anywhere — depth comes from soft inner
+   highlights and shadows only.
+   ============================================================ */
+
+.glass-panel,
+.glass-surface,
+.liquid-glass-panel,
+.liquid-glass-card {
+  position: relative;
+  border-radius: 26px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--panel-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03),
+    0 20px 46px -18px rgba(0, 0, 0, 0.6);
+}
+
+.liquid-glass-card {
+  background: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(255, 255, 255, 0.015) 55%
+    ),
+    var(--glass-bg);
+}
+
+.liquid-glass-card.small {
+  padding: 14px;
+  border-radius: 20px;
+}
+
+.liquid-glass-card.medium {
+  padding: 16px;
+}
+
+.liquid-glass-card.large {
+  padding: 26px;
+  border-radius: 30px;
+}
+
+.liquid-glass-panel {
+  background: linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.055) 0%,
+      rgba(255, 255, 255, 0.012) 60%
+    ),
+    var(--glass-bg-strong);
+}
+
+/* ============================================================
+   GLASS BUTTON — squircle, no border, plumpy squish
+   ============================================================ */
+.liquid-glass-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 32%;
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.03) 60%
+  );
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.55);
+  color: var(--glass-text);
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
+  transition:
+    transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.22s ease,
+    background 0.22s ease,
+    color 0.22s ease;
+}
+
+.liquid-glass-btn:hover {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.17) 0%,
+    rgba(255, 255, 255, 0.055) 60%
+  );
+  box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.6);
+}
+
+.liquid-glass-btn:active {
+  transform: scale(0.95);
+}
+
+/* Neutral frosted glass only — the old warm tint and the white inset
+   highlight read as a brown fill with a white border. */
+.liquid-glass-btn.primary {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.08) 60%
+  );
+  color: var(--glass-text);
+}
+
+.liquid-glass-btn.active {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.26) 0%,
+    rgba(255, 255, 255, 0.1) 60%
+  );
+  box-shadow:
+    0 0 22px rgba(255, 255, 255, 0.08),
+    0 8px 20px -10px rgba(0, 0, 0, 0.55);
+}
+
+/* Squircle icon buttons */
+.liquid-glass-btn.icon {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 32%;
+}
+
+.liquid-glass-btn.icon.small {
+  width: 34px;
+  height: 34px;
+  border-radius: 32%;
+}
+
+.liquid-glass-btn.icon.large {
+  width: 54px;
+  height: 54px;
+  border-radius: 32%;
+}
+
+.liquid-glass-btn.icon.primary {
+  width: 56px;
+  height: 56px;
+  border-radius: 34%;
+}
+
+.liquid-glass-btn.transport {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 34%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.liquid-glass-btn.transport:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.liquid-glass-btn.small-text {
+  padding: 6px 13px;
+  font-size: 0.72rem;
+  border-radius: 10px;
+}
+
+.repeat-one-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
+  font-size: 8px;
+  color: var(--accent-primary);
+}
+
+/* ============================================================
+   GLASS INPUT / SELECT
+   ============================================================ */
+.glass-input {
+  width: 100%;
+  padding: 11px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--glass-text);
+  font-size: 0.82rem;
+  border: none;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-input::placeholder {
+  color: var(--glass-text-dim);
+}
+
+.glass-input:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 3px rgba(232, 180, 180, 0.14);
+}
+
+/* ============================================================
+   CUSTOM DROPDOWN (replaces native select popups)
+   ============================================================ */
+.glass-select {
+  position: relative;
+}
+
+.glass-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 76px;
+  padding: 7px 12px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  color: var(--glass-text);
+  font-size: 0.76rem;
+  transition: background 0.2s ease;
+  white-space: nowrap;
+}
+
+.glass-select-trigger:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.glass-select-caret-icon {
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+
+.glass-select-menu {
+  position: absolute;
+  min-width: 100%;
+  padding: 6px;
+  border-radius: 16px;
+  background: rgba(22, 19, 23, 0.92);
+  backdrop-filter: blur(26px) saturate(150%);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 22px 48px -16px rgba(0, 0, 0, 0.75);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: selectPop 0.52s cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, filter;
+}
+
+.glass-select-menu.up {
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.glass-select-menu.down {
+  top: calc(100% + 8px);
+  left: 0;
+}
+
+.glass-select-option {
+  padding: 7px 10px;
+  border-radius: 11px;
+  font-size: 0.76rem;
+  color: var(--glass-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.glass-select-option:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--glass-text);
+}
+
+.glass-select-option.selected {
+  color: var(--accent-primary);
+}
+
+.glass-select-option .tick {
+  margin-left: auto;
+  opacity: 0.9;
+}
+
+/* Translate only: scaling this panel would resize its glass canvas every
+   frame, and the refraction would lag the motion. */
+@keyframes selectPop {
+  from { transform: translateY(16px); filter: blur(3px); }
+  to { transform: translateY(0); filter: blur(0); }
+}
+
+/* ============================================================
+   GLASS SLIDER (range input)
+   ============================================================ */
+.glass-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    var(--accent-primary) var(--progress, 50%),
+    rgba(255, 255, 255, 0.12) var(--progress, 50%));
+  outline: none;
+  cursor: pointer;
+}
+
+.glass-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 38%;
+  background: radial-gradient(circle at 35% 35%,
+    rgba(255, 255, 255, 0.97) 0%,
+    rgba(240, 200, 200, 0.9) 100%);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 0 12px rgba(232, 180, 180, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.glass-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+/* ============================================================
+   GLASS OVERLAY (modal backdrop)
+   ============================================================ */
+.glass-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 8, 10, 0.45);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  z-index: 10;
+}
+
+/* ============================================================
+   GLASS BADGE / TAG
+   ============================================================ */
+.glass-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  font-size: 0.7rem;
+  color: var(--glass-text-muted);
+}
+
+/* ============================================================
+   SCROLL AREA
+   ============================================================ */
+.glass-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.glass-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.glass-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+}
+
+/* ============================================================
+   WEBGL GLASS MODE
+   When the shader is live it owns the glass rendering, so the
+   frosted CSS backgrounds are dropped — otherwise the two stack
+   into a muddy double blur. Scoped under `.app-root.glass-cards`
+   so it wins over the per-component rules regardless of import
+   order, and so the frosted look stays as the WebGL-failure
+   fallback.
+   ============================================================ */
+
+.app-root.glass-cards .liquid-glass-card,
+.app-root.glass-cards .liquid-glass-panel,
+.app-root.glass-cards .mini-player,
+/* The strip over a native (mpv-drawn) film carries no shader surface, because
+   there is nothing in the page for it to refract. Dropping its background too
+   would leave the transport floating on nothing, so that one variant keeps the
+   CSS fill it was given. */
+.app-root.glass-cards .video-pill-card:not(.is-frost),
+.app-root.glass-cards .glass-select-menu {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* The shader paints the refracted scene opaquely into a canvas behind each
+   panel's content, so a bright wallpaper leaves white text with no contrast.
+   `--glass-bright` is measured from the backdrop itself and stays at 1 for
+   dark scenes, which is why this never dims the look the user already likes.
+   Only the direct-child canvas is touched: waveform canvases live deeper. */
+.app-root.glass-cards [data-glass] > canvas,
+.app-root.glass-cards .player-pill > canvas {
+  filter: brightness(var(--glass-bright, 1)) saturate(1.04);
+}
+
+/* ============================================================
+   FLOATING PANELS
+   The morphing overlays are not shader surfaces — they carry their
+   own `backdrop-filter` frost (or a live capture of the desktop, in a
+   widget), so the only thing left for this file to do is hold them off
+   the page with a shadow.
+   The legacy select menus keep their dark base: they are not glass
+   surfaces and would be unreadable over a track list without one.
+   Placed after the glass-cards reset so it wins the cascade.
+   ============================================================ */
+.app-root.glass-cards .morph-panel {
+  box-shadow: 0 22px 48px -18px rgba(0, 0, 0, 0.8);
+}
+
+/* The playback-error pill is a glass surface too: the shader refracts the
+   scene behind it and the adaptive `--glass-bright` filter keeps the text
+   legible, so only the drop shadow stays to hold it off the page. */
+.app-root.glass-cards .playback-error {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 20px 46px -20px rgba(0, 0, 0, 0.8);
+}
+
+/* Real refraction needs the numeral to stop painting itself opaque: the
+   shader renders the scene behind the glyph and the mask cuts it to the
+   stroke. But glass over a dark wallpaper is simply invisible, so the rim
+   tint is measured off the scene instead of fixed — `--glass-bright` is 1 for
+   a dark backdrop and rises with brightness, which is exactly the factor to
+   divide by. */
+.app-root.glass-cards .gc-tint {
+  background: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, calc(0.3 / var(--glass-bright, 1))) 0%,
+    rgba(255, 255, 255, calc(0.1 / var(--glass-bright, 1))) 46%,
+    rgba(255, 255, 255, calc(0.24 / var(--glass-bright, 1))) 100%
+  );
+}
+
+/* The date pill is pure shader: no CSS fill, so the refracted scene is what
+   sits behind the text. */
+.app-root.glass-cards .gc-date-shell {
+  background: transparent;
+}
+
+.app-root.glass-cards .glass-select-menu {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 60%),
+    rgba(13, 11, 16, 0.34);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 22px 48px -18px rgba(0, 0, 0, 0.8);
+}
+
+/* ============================================================
+   FULLSCREEN TAKEOVER — ACRYLIC, NEVER LIQUID
+   The takeover is deliberately left off the WebGL shader (see
+   `syncGlass` in App.tsx): its backdrop is a record that turns every
+   frame, so every panel would have to re-capture the scene every frame
+   to stay in sync. Plain `backdrop-filter` is what replaces it.
+
+   These rules live here, after the `.app-root.glass-cards` reset above,
+   and are prefixed to outrank it. That reset is written as
+   `.app-root.glass-cards .liquid-glass-card` (three classes), so a
+   two-class `.npf-root .liquid-glass-card` loses to it even though this
+   file loads later — which is exactly how the fullscreen cards ended up
+   with no blur at all. Each selector is listed twice: the short form for
+   when the shader is off entirely, the long form for when it is on.
+
+   Blur and a neutral tint are the whole recipe. No gradient sheen, no
+   inset highlight, no `saturate()`: those are reflections, and they read
+   as the glass catching a lamp that is not in the room. The record
+   behind already supplies every colour on this screen.
+   ============================================================ */
+.npf-root {
+  /* Windows' acrylic is a gaussian blur with a fine monochrome speckle over
+     it. The speckle is what stops a heavy blur looking like a smeared,
+     blocky upscale — it gives the surface something for the eye to resolve
+     instead of ringing artefacts. Turbulence rather than a baked bitmap so it
+     costs nothing to ship; desaturated so it never tints the artwork; and its
+     alpha is scaled to 3% inside the filter, because a background-image has
+     no opacity of its own and a pseudo-element would sit over the text. Kept
+     this faint on purpose: at 6% over a dark fill the speckle is what made the
+     cards read as charcoal slabs rather than glass. */
+  --acrylic-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.03'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+
+/* The takeover's dropdowns. These portal into `.morph-layer`, which is a child
+   of `.app-root` and NOT of `.npf-root`, so a `.npf-root .morph-panel` selector
+   can never match — that is why this rule is keyed on the root's `full-music`
+   class instead. They are deliberately not on the WebGL shader any more: a
+   translucent surface with a live gaussian blur tracks the turning record for
+   free, where the shader had to re-composite its whole scene every frame to
+   keep up. The fill is a light veil for list legibility, not a card. */
+.app-root.full-music .morph-panel {
+  background: rgba(14, 12, 16, 0.24);
+  backdrop-filter: blur(26px) saturate(1.3);
+  -webkit-backdrop-filter: blur(26px) saturate(1.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 22px 52px -20px rgba(0, 0, 0, 0.75);
+}
+
+/* The clock and the lyrics sheet are live glass: no fill, no grain, no
+   desaturation. `saturate()` above 1 is what makes them pull the record's
+   colour through instead of reading as grey frost — a surface veil or a
+   `saturate(0)` backdrop is precisely what turned them charcoal, and before
+   that grey. Blur is the only thing applied, so the surface is exactly the
+   backdrop, softened. */
+.npf-root .npf-clock-card,
+.npf-root .lyrics-panel,
+.npf-root .npf-quote .quote-glass,
+.app-root.glass-cards .npf-root .npf-clock-card,
+.app-root.glass-cards .npf-root .lyrics-panel,
+.app-root.glass-cards .npf-root .npf-quote .quote-glass {
+  /*
+   * A fill is back, and it is dark. With `background: none` the card is exactly
+   * the record behind it, softened — which is right for a dim sleeve and
+   * unreadable for a bright one: on the cream "Bones" artwork the panel lifted to
+   * near-white and the lyric text disappeared into it. Blur alone cannot protect
+   * contrast, because contrast is a property of the backdrop's luminance, and the
+   * backdrop is whatever the user is playing.
+   *
+   * `brightness()` is pushed down rather than up so a pale artwork is pulled
+   * toward the text's own dark ground instead of toward the text's light colour.
+   */
+  background: rgba(11, 9, 12, 0.24);
+  backdrop-filter: blur(26px) saturate(1.3) brightness(0.82);
+  -webkit-backdrop-filter: blur(26px) saturate(1.3) brightness(0.82);
+  border: none;
+  box-shadow: 0 18px 44px -22px rgba(0, 0, 0, 0.55);
+}
+
+/* The transport pill is frosted like the rest of the takeover's glass: a
+   gaussian blur over the record with a light touch of saturation, so it reads
+   as acrylic sitting on the artwork rather than a flat dark tray. The buttons
+   on it keep their own 8px frost — nested backdrop-filters stack, the outer
+   one softening the record before the inner one samples it. */
+.npf-root .npf-bar,
+.app-root.glass-cards .npf-root .npf-bar {
+  background: rgba(12, 10, 14, 0.2);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow: 0 16px 40px -22px rgba(0, 0, 0, 0.6);
+}
+
+/* The mode switcher is a pill of its own, so it frosts like the transport pill
+   rather than sitting as a flat tray over the record: without the blur its
+   buttons read as pasted onto the artwork instead of floating above it. */
+.npf-root .view-switcher,
+.npf-root .npf-switcher,
+.app-root.glass-cards .npf-root .view-switcher,
+.app-root.glass-cards .npf-root .npf-switcher {
+  background: rgba(12, 10, 14, 0.2);
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  box-shadow: 0 16px 40px -22px rgba(0, 0, 0, 0.6);
+}
+
+/* The four mode buttons sit on a card of their own, so they read as a group
+   rather than four loose icons floating over the record. */
+.npf-root .npf-switcher,
+.app-root.glass-cards .npf-root .npf-switcher {
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 22px;
+}
+
+/* Every button frosts itself. This is the one place a light neutral wash is
+   still wanted: without any lift at all the squircle has no edge and the
+   icons float in the dark. */
+.npf-root .liquid-glass-btn,
+.npf-root .glass-select-trigger,
+.app-root.glass-cards .npf-root .liquid-glass-btn,
+.app-root.glass-cards .npf-root .glass-select-trigger {
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: none;
+}
+
+.npf-root .liquid-glass-btn:hover,
+.npf-root .glass-select-trigger:hover,
+.app-root.glass-cards .npf-root .liquid-glass-btn:hover,
+.app-root.glass-cards .npf-root .glass-select-trigger:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.npf-root .liquid-glass-btn.active,
+.npf-root .glass-select-trigger.active,
+.app-root.glass-cards .npf-root .liquid-glass-btn.active,
+.app-root.glass-cards .npf-root .glass-select-trigger.active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* The clock's numerals were individual shader surfaces. Without the shader
+   each glyph carries its own flat fill; the mask still clips it to the
+   numeral, which is what keeps the stencil shape. */
+.npf-root .gc-glyph,
+.app-root.glass-cards .npf-root .gc-glyph {
+  background: rgba(228, 226, 232, 0.14);
+}
+
+.npf-root .gc-tint,
+.app-root.glass-cards .npf-root .gc-tint {
+  background: rgba(228, 226, 232, 0.16);
+}
+
+.npf-root .gc-date-shell,
+.app-root.glass-cards .npf-root .gc-date-shell {
+  background: rgba(228, 226, 232, 0.08);
+}
+
+/* The hover label is a pseudo-element that sits entirely outside its control's
+   box, so any ancestor that clips eats it. The frosted surfaces used to clip
+   (`overflow: hidden` kept the shader's padded canvas inside the rounded
+   corners) and nothing in the takeover is on the shader now, so nothing here
+   should. Stated explicitly because the panels and the cards both want it. */
+.npf-root .npf-bar,
+.npf-root .npf-extra,
+.npf-root .npf-clock-card,
+.npf-root .transport,
+.npf-root .view-switcher,
+.npf-root .volume-wrap,
+.npf-root .pitch-eq,
+.npf-root .liquid-glass-btn,
+.npf-root .glass-select-trigger,
+.app-root.glass-cards .npf-root .npf-bar,
+.app-root.glass-cards .npf-root .npf-extra,
+.app-root.glass-cards .npf-root .npf-clock-card,
+.app-root.glass-cards .npf-root .transport,
+.app-root.glass-cards .npf-root .view-switcher,
+.app-root.glass-cards .npf-root .volume-wrap,
+.app-root.glass-cards .npf-root .pitch-eq,
+.app-root.glass-cards .npf-root .liquid-glass-btn,
+.app-root.glass-cards .npf-root .glass-select-trigger {
+  overflow: visible;
+}
+
+/* Above the morph panel, which is the same element the label has to clear when
+   its dropdown is open. */
+.npf-root [data-tip]::after,
+.app-root.glass-cards .npf-root [data-tip]::after {
+  z-index: 120;
+}
+
+/* The travelling lyric highlighter. In the library window this is a real liquid
+   glass surface (the shader registers it like any other card), but every
+   surface inside the takeover is plain gaussian frosted glass by design, so the
+   sheet needs the takeover's own recipe here or it renders as nothing at all —
+   which is exactly what it did when only the shader rule existed. */
+.npf-root .lyric-glass,
+.app-root.glass-cards .npf-root .lyric-glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px) saturate(1.5) brightness(1.42);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5) brightness(1.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 10px 26px -16px rgba(0, 0, 0, 0.8);
+}
+
+/*
+ * The video pill is a shader surface, so the reset above is all it needs — with
+ * one addition. It is the only pill in the app that fades itself out, and the
+ * shader canvas is injected at `z-index: -1` *inside* the element, so a box
+ * shadow written on the element lands behind the glass and is invisible. The
+ * shadow therefore lives in `globals.css` on the pill and the rim lives here,
+ * where it can sit above the canvas.
+ *
+ * `:not(.is-frost)` because over a native (mpv-drawn) film the strip carries no
+ * shader surface at all, and this rule is the one that would paint it invisible.
+ */
+.app-root.glass-cards .video-pill-card:not(.is-frost) {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ============================================================
+   TINTED GLASS SURFACES — buttons, travelling sheets, the row menu
+   Added last so they outrank the component rules in `globals.css`,
+   which is the same cascade the rest of this file depends on.
+   ============================================================ */
+
+/*
+ * A primary action. The fill here is the *fallback* for a machine where WebGL
+ * is unavailable — once the shader is live the canvas is injected at z-index -1
+ * and paints over the element's own background, so the glass takes over and the
+ * flat wash goes.
+ */
+.glass-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 18px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--glass-text);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 60%);
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.55);
+}
+
+.glass-btn:disabled {
+  cursor: default;
+  color: var(--glass-text-dim);
+}
+
+.btn-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--btn-tint);
+}
+
+.btn-face {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.app-root.glass-cards .glass-btn {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The travelling highlighters. Same story: a CSS fill only for the fallback. */
+.travel-sheet {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.app-root.glass-cards .travel-sheet {
+  background: transparent;
+}
+
+.app-root.glass-cards .sheet-tint {
+  background: var(--sheet-tint);
+}
+
+/*
+ * The row menu gets the dropdown's own recipe — the shader refracts, the dark
+ * base keeps the labels legible over whatever the backdrop is doing, and the
+ * accent wash rides above the canvas as a child because the canvas would
+ * otherwise cover it.
+ */
+.app-root.glass-cards .song-context-menu {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 60%),
+    rgba(13, 11, 16, 0.34);
+  box-shadow: 0 22px 48px -18px rgba(0, 0, 0, 0.8);
+}
+
+/*
+ * The search bar's result list: the same recipe as the row menu. It is not
+ * `liquid-glass-card`, because that class carries `position: relative` and this
+ * file loads after `globals.css`, so it would win the cascade and stop the panel
+ * being absolutely positioned under the bar.
+ */
+.app-root.glass-cards .search-results {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 60%),
+    rgba(13, 11, 16, 0.42);
+  box-shadow: 0 22px 48px -18px rgba(0, 0, 0, 0.8);
+}
+
+.menu-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent-primary) 13%, transparent);
+}
+
+.song-context-menu > .song-context-item,
+.song-context-menu > .song-context-sep {
+  position: relative;
+  z-index: 1;
+}
+

@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="glassGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e8b4b4;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#c8d8e8;stop-opacity:0.6" />
+    </linearGradient>
+    <filter id="glassBlur">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feBlend in="SourceGraphic" in2="blur" mode="normal" />
+    </filter>
+  </defs>
+
+  <circle cx="256" cy="256" r="240" fill="url(#glassGradient)" filter="url(#glassBlur)" />
+  <circle cx="256" cy="256" r="240" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="3" />
+  <circle cx="256" cy="256" r="200" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="1" />
+
+  <g transform="translate(256, 256)">
+    <path
+      d="M-12 -40 L-12 -80 L40 -80 L40 -40 L12 -40 L12 40 L-12 40 Z"
+      fill="#121212"
+      opacity="0.9"
+      filter="drop-shadow(0 4px 12px rgba(0,0,0,0.5))"
+    />
+    <path
+      d="M40 -80 L40 -40 L70 -40 L70 -80 L40 -80 Z"
+      fill="#121212"
+      opacity="0.9"
+      filter="drop-shadow(0 4px 12px rgba(0,0,0,0.5))"
+    />
+    <circle cx="34" cy="32" r="24" fill="#121212" opacity="0.9" filter="drop-shadow(0 4px 12px rgba(0,0,0,0.5))" />
+    <circle cx="64" cy="32" r="24" fill="#121212" opacity="0.9" filter="drop-shadow(0 4px 12px rgba(0,0,0,0.5))" />
+  </g>
+
+  <ellipse cx="180" cy="160" rx="60" ry="30" fill="rgba(255,255,255,0.15)" transform="rotate(-20 180 160)" />
+</svg>
