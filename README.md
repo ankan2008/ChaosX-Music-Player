@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="public/brand/icon-source.png" alt="ChaosX app icon" width="112" height="112">
+  <br><br>
+  <img src="public/brand/wordmark.png" alt="ChaosX" width="340">
+</p>
+
 # 🎧 ChaosX — Music Player (Mark x1.0)
 
 ## 🌌 Introduction
