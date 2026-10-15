@@ -37,10 +37,7 @@ connected-components
 .env
 .env.*
 
-# Typeface files. Both faces the app uses are licensed to the person who bought
-# them, not to the project, so they are not redistributed here — drop your own
-# copies into this folder and the CSS picks them up, or let it fall through to
-# system-ui. See src/assets/fonts/README.md.
+# Bundled interface assets that stay local and are not redistributed here.
 src/assets/fonts/*.otf
 src/assets/fonts/*.ttf
 src/assets/fonts/*.woff

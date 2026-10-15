@@ -100,7 +100,7 @@ These are plans and possibilities, not promises. Feature requests are welcome, b
 *Dependencies and third-party libraries are listed in its own document.*
 
 The full inventory — runtime libraries and their transitive packages, build tooling, the
-vendored glass engine, the bundled mpv and FFmpeg binaries, typefaces, icons and the
+vendored glass engine, the bundled mpv and FFmpeg binaries, icons and the
 lyrics service, each with author and licence — lives in
 **[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**.
 
@@ -148,17 +148,13 @@ npm run dev      # the app, hot-reloading
 npm run build    # typecheck, bundle, then package into release/
 ```
 
-`npm run build` needs two things that are deliberately **not** in this repository:
+`npm run build` needs one thing that is deliberately **not** in this repository:
 
 **The player binaries.** `resources/mpv/mpv.exe` and `resources/ffmpeg/{ffmpeg,ffprobe}.exe`
 are each larger than GitHub's 100 MB per-file limit, so they are fetched rather than
 committed. Drop your own builds into those folders and the packager picks them up as
 `extraResources`. Without them the app still runs and plays audio; video and the audio
 filters that need ffmpeg are unavailable.
-
-**The fonts.** See [`src/assets/fonts/README.md`](src/assets/fonts/README.md) — both faces
-are licensed to whoever bought them. Without them the interface falls through to
-`system-ui` and loses the look it was designed around.
 
 ## ⌨️ Keyboard
 
@@ -185,6 +181,6 @@ library is a list of paths on your own machine.
 
 ## 📄 License
 
-[MIT](LICENSE). The mpv and ffmpeg binaries, the vendored glass engine, the icons, and the
-two typefaces carry their own terms and are not covered by it — see
+[MIT](LICENSE). The mpv and ffmpeg binaries, the vendored glass engine and the icons carry
+their own terms and are not covered by it — see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

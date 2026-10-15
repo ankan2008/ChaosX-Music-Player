@@ -141,28 +141,7 @@ therefore fetched rather than committed.
 
 ---
 
-## 5. Typefaces
-
-Both faces are **licensed to whoever purchased them**, are **not in this repository**, and
-are **not covered by its MIT licence**. They are baked into the packaged application, not
-redistributed as source. See [`src/assets/fonts/README.md`](src/assets/fonts/README.md).
-
-| Face | Used for | Designer / owner | Where |
-| --- | --- | --- | --- |
-| **Cocon** (`Cocon-Regular.otf`) | every word in the interface | Evert Bloemsma — *FF Cocon*, licensed through Linotype / Monotype | [myfonts.com/pages/linotype-ff-cocon](https://www.myfonts.com/pages/linotype-ff-cocon/) · [bloemsma.nl](https://www.bloemsma.nl/) |
-| **Google Sans Round Bold** (`GS-Round-Bold.ttf`) | numerals only — clock, durations, play counts, bitrates | Google — proprietary, not publicly licensed for redistribution | [fonts.google.com](https://fonts.google.com/) |
-
-Confirm both against your own purchase records before naming them anywhere public; the
-Cocon attribution above is inferred from the filename and metrics, not from a licence
-certificate held by this repository.
-
-The digit range is handed to Google Sans Round through a CSS `unicode-range` because
-Cocon's `7` has a broken advance — a workaround for a shipped font's defect, not a
-styling choice.
-
----
-
-## 6. Interface icons
+## 5. Interface icons
 
 The 30 icons under `src/assets/icons/` are drawn from the **Plumpy** icon set:
 
@@ -179,7 +158,7 @@ for this project.
 
 ---
 
-## 7. Online service
+## 6. Online service
 
 | Service | Purpose | Provider |
 | --- | --- | --- |
@@ -190,7 +169,7 @@ metadata, and no lyrics are bundled with this app.
 
 ---
 
-## 8. Bundled sample wallpapers
+## 7. Bundled sample wallpapers
 
 `resources/wallpapers/` — 19 files, ~70 MB, the largest a 22.6 MB clip — ships with the
 application as selectable static and live backgrounds, and is committed with the
@@ -202,24 +181,23 @@ with anything on their disk.
 first run (`src/stores/playerStore.ts:391`, `index.html:58`, `SetupWizard.tsx:148`), so it
 is committed too — without it a fresh clone boots with no wallpaper.
 
-## 9. Content deliberately not in this repository
+## 8. Content deliberately not in this repository
 
-- **The player binaries** — see section 4. mpv and the two ffmpeg executables each exceed
-  GitHub's 100 MB per-file limit, so they are fetched, not committed.
-- **The fonts** — see section 5. Licensed to whoever bought them.
+**The player binaries** — see section 4. mpv and the two ffmpeg executables each exceed
+GitHub's 100 MB per-file limit, so they are fetched rather than committed, and published
+through GitHub Releases instead.
 
 ---
 
-## 10. Attribution obligations, as tracked here
+## 9. Attribution obligations, as tracked here
 
 | Obligation | Status |
 | --- | --- |
 | MIT / BSD / 0BSD packages keep their notices in the bundle | ✅ Satisfied by `node_modules` licence files carried into the build |
 | MPL-2.0 (SoundTouchJS) — file-level copyleft | ✅ Named here; source stays at the linked upstream |
 | GPL / LGPL (mpv, FFmpeg) — licence text travels with the binary, source available | ⚠️ `FFMPEG-LICENSE.txt` is bundled; keep a matching mpv licence file in `resources/mpv/` and be ready to point users at upstream source |
-| Icons8 free tier — visible attribution link | ✅ Sections 6 here and the README |
+| Icons8 free tier — visible attribution link | ✅ Section 5 here and the README |
 | Vendored liquidglass — author credited | ✅ Named in section 3 and in the README credits. Upstream publishes no `LICENSE` file, so there is no notice to reproduce |
-| Fonts | ✅ Excluded from the repository entirely |
 
 *This document describes the state of the components ChaosX Mark x1.0 uses. It is an
 attribution record, not legal advice.*
