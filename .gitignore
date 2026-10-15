@@ -11,18 +11,13 @@ resources/mpv/*.exe
 resources/ffmpeg/*.exe
 resources/**/*.dll
 
-# Bundled sample wallpapers and live video — third-party artwork and footage that
-# nobody here holds a redistribution licence for. They stay on disk so this machine's
-# app and installer keep working exactly as before, but they must never be published.
-# Without these rules `git add -A` stages all 21 of them.
+# The sample wallpapers and live clips ARE part of the app — they are what ships in the
+# installer and what a fresh clone needs, so they are committed like any other asset.
+# The largest is 22.6 MB, well inside GitHub's 50 MB warning and 100 MB reject limits.
 #
-# NOTE the consequence: `public/brand/wallpapers/train_upscaled.jpg` is the default
-# backdrop the code asks for (playerStore.ts:391, index.html:58, SetupWizard.tsx:148),
-# so a fresh clone has no file at that path. Either drop a wallpaper you own there, or
-# repoint the default at something generated before anyone builds from the repository.
-resources/wallpapers/
-public/brand/wallpapers/
-# A stray duplicate of one of the above, tracked before this rule existed.
+# One exception: this file was committed once, is byte-identical to
+# resources/wallpapers/katana.jpg, and nothing in the codebase references it. Dead
+# weight, so it stays out.
 public/brand/wallpaper.jpg
 
 # Local scratch, agent state and one-off dumps — never part of the app

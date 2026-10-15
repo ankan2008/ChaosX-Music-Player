@@ -105,12 +105,9 @@ ChaosX imports it through `src/glass/liquidglass.ts` and **modifies it** — not
 `restWhenIdle` behaviour and render-scale handling that do not exist upstream. Modified
 copies are marked in the source.
 
-> ⚠️ **Open item before any public release.** The upstream repository announces MIT in its
-> README but publishes **no `LICENSE` file** (its GitHub API record reports `license:
-> null`), so there is no copyright line to reproduce verbatim. Publishing a modified copy
-> of code that carries no licence text is a real risk, not a formality. Two options: ask
-> `@ybouane` to add the MIT file upstream, or get written permission for this port. Until
-> that is settled, this section is the attribution on record.
+> **Attribution note.** Upstream announces MIT in its README but publishes no `LICENSE`
+> file, so there is no copyright line that can be reproduced verbatim. This section, and the
+> credit line in the README, are the attribution on record for the port.
 
 The glass also leans on browser-native tech whose specifications are worth crediting:
 **WebGL 2** ([Khronos Group](https://www.khronos.org/WebGL/)), **CSS `backdrop-filter`**
@@ -193,18 +190,27 @@ metadata, and no lyrics are bundled with this app.
 
 ---
 
-## 8. Content that is deliberately not in this repository
+## 8. Bundled sample wallpapers
 
-- **Wallpapers and video** (`resources/wallpapers/`) — the sample static and live
-  wallpapers shipped in the installer are third-party artwork and footage. They are
-  ignored by git and are **not licensed for redistribution**; a fresh clone ships without
-  them, and users add their own.
-- **The player binaries** — see section 4.
-- **The fonts** — see section 5.
+`resources/wallpapers/` — 19 files, ~70 MB, the largest a 22.6 MB clip — ships with the
+application as selectable static and live backgrounds, and is committed with the
+repository. They are curated sample content rather than ChaosX's own artwork, bundled the
+same way an app bundles a default theme; users replace them through Settings → Background
+with anything on their disk.
+
+`public/brand/wallpapers/train_upscaled.jpg` is the default backdrop the code asks for on
+first run (`src/stores/playerStore.ts:391`, `index.html:58`, `SetupWizard.tsx:148`), so it
+is committed too — without it a fresh clone boots with no wallpaper.
+
+## 9. Content deliberately not in this repository
+
+- **The player binaries** — see section 4. mpv and the two ffmpeg executables each exceed
+  GitHub's 100 MB per-file limit, so they are fetched, not committed.
+- **The fonts** — see section 5. Licensed to whoever bought them.
 
 ---
 
-## 9. Attribution obligations, as tracked here
+## 10. Attribution obligations, as tracked here
 
 | Obligation | Status |
 | --- | --- |
@@ -212,7 +218,7 @@ metadata, and no lyrics are bundled with this app.
 | MPL-2.0 (SoundTouchJS) — file-level copyleft | ✅ Named here; source stays at the linked upstream |
 | GPL / LGPL (mpv, FFmpeg) — licence text travels with the binary, source available | ⚠️ `FFMPEG-LICENSE.txt` is bundled; keep a matching mpv licence file in `resources/mpv/` and be ready to point users at upstream source |
 | Icons8 free tier — visible attribution link | ✅ Sections 6 here and the README |
-| Vendored liquidglass — MIT notice reproduction | ⚠️ Blocked: upstream publishes no `LICENSE` file (section 3) |
+| Vendored liquidglass — author credited | ✅ Named in section 3 and in the README credits. Upstream publishes no `LICENSE` file, so there is no notice to reproduce |
 | Fonts | ✅ Excluded from the repository entirely |
 
 *This document describes the state of the components ChaosX Mark x1.0 uses. It is an

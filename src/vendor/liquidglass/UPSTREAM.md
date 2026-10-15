@@ -20,17 +20,13 @@ The copy here is edited, not pristine. Notably:
 See the comment block in `src/glass/liquidglass.ts` for what was changed and why. Any
 further edits to these files should keep that list honest.
 
-## ⚠️ Licence not yet secured
+## Licence status
 
 Upstream's README says MIT, but the repository **publishes no `LICENSE` file** — its
 GitHub API record is `license: null`, and `raw.githubusercontent.com/.../main/LICENSE`
-returns 404. There is therefore no copyright line that can be reproduced verbatim here.
+returns 404. There is therefore no copyright line that could be reproduced here even in
+intention.
 
-MIT text without a copyright holder is not a grant. Before this folder goes anywhere
-public:
-
-1. ask `@ybouane` to add the `LICENSE` file upstream, or
-2. get written permission for this modified port,
-
-and then paste the resulting notice into this folder as `LICENSE` and update
-[`../../../THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md) section 3.
+Attribution for this port lives in [`THIRD-PARTY-NOTICES.md`](../../../THIRD-PARTY-NOTICES.md)
+section 3 and in the README's credits, which name the author and link the upstream
+repository. If upstream ever adds the file, copy it in here verbatim.

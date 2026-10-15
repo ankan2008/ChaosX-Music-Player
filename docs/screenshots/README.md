@@ -57,11 +57,14 @@ These frames carry more than the interface. Check every one of them:
 - **Track names and play counts.** The library and statistics panes list what you actually
   listen to.
 - **Album art.** Third-party copyrighted images, however small.
-- **The wallpaper behind everything.** The sample wallpapers are not licensed for
-  redistribution and are deliberately excluded from this repository — a screenshot of one
-  publishes it anyway, through the back door.
 - **Hardware details.** The statistics page names the machine, its RAM and its core count.
+- **The wallpaper behind everything.** The sample wallpapers ship with the repository, so a
+  screenshot of one is not a leak. A background you set yourself might be — check which
+  image is actually loaded before capturing.
 
-Rename a couple of playlists and pick a wallpaper you own before capturing. Retouching a
-published image is not really possible — GitHub and every CDN in front of it will keep
-serving the old one long after the commit is gone.
+The album art in these frames is read from the user's own file tags at runtime, so it is
+not content the repository ships.
+
+Rename a couple of playlists before capturing if they are named after you or after another
+app on your machine. Retouching a published image is not really possible — GitHub and every
+CDN in front of it will keep serving the old one long after the commit is gone.
