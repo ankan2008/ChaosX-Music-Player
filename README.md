@@ -130,7 +130,7 @@ has; the acrylic backdrop needs Windows 11 and is skipped quietly where it is no
 
 ## 📥 Install
 
-Grab the latest from [Releases](https://github.com/ankan2008/ChaosX/releases):
+Grab the latest from [Releases](https://github.com/ankan2008/ChaosX-Music-Player/releases):
 
 - **`ChaosX Mark x1.0-Setup.exe`** — the installer. It asks where to put it, and adds a
   Start Menu and desktop shortcut.
