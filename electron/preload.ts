@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { WallpaperInfo } from '../src/vite-env';
+import type { AutoLaunchState, WallpaperInfo } from '../src/vite-env';
 
 /**
  * The mpv command bridge.
@@ -42,7 +42,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartApp: () => ipcRenderer.invoke('app:restart'),
   getWindowState: () => ipcRenderer.invoke('window:get-state'),
   /** One-way: this page has composed, so the window may now be put on screen. */
-  notifyReady: () => ipcRenderer.send('window:ready'),
   /** Whether the window is really zoomed, pushed whenever the answer changes. */
   onZoomed: (callback: (zoomed: boolean) => void) => {
     const listener = (_event: unknown, zoomed: boolean) => callback(zoomed === true);
@@ -50,6 +49,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window:zoomed', listener);
   },
   setWindowMaterial: (material: string) => ipcRenderer.invoke('window:set-material', material),
+  /** The shipped wallpaper set, and the folder on disk that holds it. */
+  getStockWallpapers: () =>
+    ipcRenderer.invoke('wallpaper:stock') as Promise<{
+      dir: string;
+      items: { name: string; path: string; kind: 'image' | 'video' }[];
+    }>,
+  openStockWallpapers: () => ipcRenderer.invoke('wallpaper:stock:open') as Promise<boolean>,
+  /** What the taskbar itself says, not what the app last wrote. See the handler. */
+  isTaskbarPinned: () => ipcRenderer.invoke('taskbar:is-pinned') as Promise<boolean>,
+  /** Turning it on raises Windows' own pin dialog and waits for the answer. */
+  setTaskbarPinned: (on: boolean) =>
+    ipcRenderer.invoke('taskbar:set-pinned', on) as Promise<{ ok: boolean; error?: string }>,
   /** Take the whole monitor including the taskbar, or hand it back. */
   setImmersive: (on: boolean) => ipcRenderer.invoke('window:set-immersive', on),
   setViewMode: (mode: 'normal' | 'full' | 'mini' | 'pill', state?: unknown) =>
@@ -300,7 +311,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pathExists: (filePath: string) => ipcRenderer.invoke('fs:path-exists', filePath),
   listDir: (dirPath: string) => ipcRenderer.invoke('fs:list-dir', dirPath),
   loadLibraryCache: () => ipcRenderer.invoke('library:load-cache'),
-  saveLibraryCache: (data: unknown) => ipcRenderer.invoke('library:save-cache', data),
+  /**
+   * What the scan has learned since the last call, and what has since disappeared.
+   *
+   * A delta rather than the whole index: the file is 23 MB once a library is scanned,
+   * and re-sending all of it three times a second is what made a first run cost the
+   * better part of the machine. One-way, because nothing in a scan waits for the write.
+   */
+  patchLibraryCache: (patch: unknown) => ipcRenderer.send('library:patch-cache', patch),
   /** The `.m3u8` lists in the app's own folder. A playlist is named, never pathed. */
   createPlaylist: (name: string, entries: string[]) =>
     ipcRenderer.invoke('playlist:create', name, entries) as Promise<{ ok: boolean; path?: string; error?: string }>,
@@ -335,8 +353,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPlatform: () => ipcRenderer.invoke('app:get-platform'),
   /** Register or unregister ChaosX in the per-user login items. */
   setAutoLaunch: (on: boolean) =>
-    ipcRenderer.invoke('app:set-auto-launch', on) as Promise<{ ok: boolean }>,
-  getAutoLaunch: () => ipcRenderer.invoke('app:get-auto-launch') as Promise<boolean>,
+    ipcRenderer.invoke('app:set-auto-launch', on) as Promise<AutoLaunchState>,
+  /**
+   * What will really happen at the next sign-in. `vetoed` is the one Electron's own
+   * getter cannot see: Task Manager leaves the login item in place and marks it off
+   * beside it, so an app switched off there still reports itself as registered.
+   */
+  getAutoLaunch: () => ipcRenderer.invoke('app:get-auto-launch') as Promise<AutoLaunchState>,
   /** Park in the notification area on close instead of quitting. */
   setCloseToTray: (on: boolean) =>
     ipcRenderer.invoke('app:set-close-to-tray', on) as Promise<{ ok: boolean }>,

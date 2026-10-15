@@ -57,6 +57,23 @@ export interface WallpaperInfo {
   virtual: { x: number; y: number; width: number; height: number } | null;
 }
 
+/**
+ * What will actually happen at the next sign-in.
+ *
+ * `registered` is the login item existing at all, which is what Electron's own
+ * getter reports. `vetoed` is the part it cannot see: Task Manager's Startup tab
+ * does not delete a login item when you switch it off, it leaves the `Run` value
+ * there and writes a marker beside it, so an app the user has disabled there keeps
+ * reporting itself as enabled forever. `enabled` is the only one worth showing.
+ */
+export interface AutoLaunchState {
+  ok?: boolean;
+  error?: string;
+  registered: boolean;
+  vetoed: boolean;
+  enabled: boolean;
+}
+
 export interface ElectronAPI {
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<boolean>;
@@ -64,11 +81,18 @@ export interface ElectronAPI {
   /** Hard-kill and relaunch the app with Chromium's cache cleared. Never resolves. */
   restartApp: () => Promise<void>;
   getWindowState: () => Promise<{ isMaximized: boolean }>;
-  /** Sent once by the library window, after its first composed frame. */
-  notifyReady?: () => void;
   /** The real `WS_MAXIMIZE` of the library window, pushed as it changes. */
   onZoomed?: (callback: (zoomed: boolean) => void) => () => void;
   setWindowMaterial: (material: string) => Promise<void>;
+  /** The shipped wallpaper folder and what is in it, read from disk at call time. */
+  getStockWallpapers?: () => Promise<{
+    dir: string;
+    items: { name: string; path: string; kind: 'image' | 'video' }[];
+  }>;
+  openStockWallpapers?: () => Promise<boolean>;
+  /** The shell's pinned-items shortcut, which is the only pin that survives a reboot. */
+  isTaskbarPinned?: () => Promise<boolean>;
+  setTaskbarPinned?: (on: boolean) => Promise<{ ok: boolean; error?: string }>;
   /** Cover the whole monitor, taskbar included, and hand it back again. */
   setImmersive: (on: boolean) => Promise<{ ok: boolean }>;
   setViewMode: (mode: 'normal' | 'full' | 'mini' | 'pill', state?: HandoffState) => Promise<{ mode: string }>;
@@ -141,7 +165,10 @@ export interface ElectronAPI {
     Array<{ name: string; isDirectory: boolean; isFile: boolean; size?: number; mtimeMs?: number }>
   >;
   loadLibraryCache: () => Promise<unknown>;
-  saveLibraryCache: (data: unknown) => Promise<boolean>;
+  patchLibraryCache: (patch: {
+    set?: Record<string, { stamp: string; track: unknown }>;
+    remove?: string[];
+  }) => void;
   /**
    * The playlists this app owns, at `<userData>/playlists/<name>.m3u8`.
    *
@@ -192,8 +219,9 @@ export interface ElectronAPI {
   getAppVersion: () => Promise<string>;
   getPlatform: () => Promise<string>;
   /** Register ChaosX as a per-user login item. */
-  setAutoLaunch?: (on: boolean) => Promise<{ ok: boolean }>;
-  getAutoLaunch?: () => Promise<boolean>;
+  setAutoLaunch?: (on: boolean) => Promise<AutoLaunchState>;
+  /** Null when the build cannot answer — a dev run has no login item of its own. */
+  getAutoLaunch?: () => Promise<AutoLaunchState | null>;
   /** Hide to the notification area on close instead of quitting. */
   setCloseToTray?: (on: boolean) => Promise<{ ok: boolean }>;
   openExternal: (url: string) => Promise<void>;

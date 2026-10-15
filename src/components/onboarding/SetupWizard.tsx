@@ -20,6 +20,7 @@ const STEPS = [
   { key: 'profile', label: 'You', icon: 'pencil' },
   { key: 'library', label: 'Library', icon: 'playlist' },
   { key: 'backdrop', label: 'Backdrop', icon: 'image' },
+  { key: 'system', label: 'Windows', icon: 'settings' },
 ] as const;
 
 type StepKey = (typeof STEPS)[number]['key'];
@@ -59,12 +60,79 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
 
   const [step, setStep] = useState<StepKey>('profile');
   const [user, setUser] = useState<{ displayName?: string; username?: string; avatar?: string | null } | null>(null);
+  /*
+   * The two things the app does to the machine rather than to itself, asked here
+   * instead of being done on first launch: an install that edits the login items
+   * and the taskbar before it has said hello is the one thing people uninstall.
+   *
+   * Both start on, which is what the user asked for and also what almost everyone
+   * here wants — a player that is waiting when the laptop opens, and one that goes
+   * to the tray rather than stopping dead when the cross is pressed. Unticking is
+   * the whole opt-out, and both stay changeable in Settings.
+   */
+  const [pin, setPin] = useState(true);
+  const [startup, setStartup] = useState(true);
+  /*
+   * The shipped wallpapers, in the same miniature grid Settings uses. Setup is
+   * where most people choose their backdrop, and until now the only way to see what
+   * ChaosX ships was to leave setup, open Settings, and read a list of file names.
+   */
+  const [stock, setStock] = useState<{
+    dir: string;
+    items: { name: string; path: string; kind: 'image' | 'video' }[];
+  }>({ dir: '', items: [] });
 
   useEffect(() => {
     void window.electronAPI?.getUser().then((info) => {
       if (info) setUser(info as never);
     });
+    void window.electronAPI?.getStockWallpapers?.().then((got) => {
+      if (got) setStock(got);
+    });
+    /* A shortcut the user pinned by hand before installing this build is still
+       theirs; the step should show the truth rather than re-asking. */
+    void window.electronAPI?.isTaskbarPinned?.().then((on) => {
+      if (on === undefined) return;
+      setPin(on);
+    });
+    void window.electronAPI?.getAutoLaunch?.().then((on) => {
+      if (typeof on === 'boolean') setStartup(on);
+    });
   }, []);
+
+  /*
+   * Three seconds of "Scanning…", the same as the Library page's button. The card is
+   * the way in to pinning a second folder, and holding it shut for the whole of a
+   * first walk over the library turns the one control setup exists for into a
+   * spinner.
+   */
+  const [scanAnnounced, setScanAnnounced] = useState(false);
+  useEffect(() => {
+    if (!isScanning) {
+      setScanAnnounced(false);
+      return;
+    }
+    setScanAnnounced(true);
+    const timer = window.setTimeout(() => setScanAnnounced(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [isScanning]);
+
+  /** Hand the two answers to main, then let the page close the wizard. */
+  const finish = () => {
+    const store = usePlayerStore.getState();
+    // Unconditional, because the default is the answer: writing the same value the
+    // field already carries is what registers the login item on a first run, and
+    // skipping it on the grounds that nothing changed is how the switch ends up
+    // reading "On" against a machine that was never told.
+    store.setAutoStartup(startup);
+    /*
+     * Only ever a request to *add* the pin. Windows answers it with its own dialog,
+     * and there is no matching call to take the pin back — asking to switch it off
+     * would spend the whole first run on a prompt that can only say no.
+     */
+    if (pin) void window.electronAPI?.setTaskbarPinned?.(true);
+    onDone();
+  };
 
   const rawName = user?.displayName || user?.username || 'there';
   const name = rawName.charAt(0).toUpperCase() + rawName.slice(1);
@@ -73,11 +141,11 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
   /*
    * The disc shows the wallpaper the user is standing on, which is the katana for
    * anyone coming through here for the first time. `wallpaperPath` is already a
-   * `toMediaUrl`-able value — an absolute Windows path, or `/brand/wallpaper.jpg`
-   * for a fresh install — so it goes through the same resolver the rest of the
+   * `toMediaUrl`-able value — an absolute Windows path, or the shipped
+   * `/brand/wallpapers/train_upscaled.jpg` for a fresh install — so it goes through the same resolver the rest of the
    * app uses rather than a second rule for what counts as a URL.
    */
-  const discArt = toMediaUrl(wallpaperPath || '/brand/wallpaper.jpg');
+  const discArt = toMediaUrl(wallpaperPath || '/brand/wallpapers/train_upscaled.jpg');
 
   const pickAvatar = async () => {
     const file = await window.electronAPI?.openFile({
@@ -115,6 +183,11 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
   const chooseArt = () => {
     usePlayerStore.getState().setBackground('art');
   };
+  const chooseStock = (item: { path: string; kind: 'image' | 'video' }) => {
+    const store = usePlayerStore.getState();
+    store.setWallpaper(item.path, item.kind);
+    store.setBackground('custom');
+  };
 
   const songCount = library.filter((t) => t.kind !== 'video').length;
   const index = STEPS.findIndex((s) => s.key === step);
@@ -144,7 +217,7 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
           <button
             type="button"
             className="liquid-glass-btn small-text squish"
-            onClick={onDone}
+            onClick={finish}
             data-tip="Skip setup — everything stays changeable in Settings"
           >
             Skip for now
@@ -241,13 +314,12 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
               type="button"
               className="setup-pin-card"
               onClick={() => void onPinFolder()}
-              disabled={isScanning}
             >
               <span className="setup-pin-icon">
-                <Icon name={isScanning ? 'refresh' : 'plus'} size={20} />
+                <Icon name={scanAnnounced ? 'refresh' : 'plus'} size={20} />
               </span>
               <span className="setup-pin-title">
-                {isScanning ? 'Scanning…' : 'Choose folders to pin'}
+                {scanAnnounced ? 'Scanning…' : 'Choose folders to pin'}
               </span>
               <span className="setup-pin-sub">
                 A folder picker opens. Everything inside it — audio and video — is
@@ -324,6 +396,99 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
                 {wallpaperPath ? <span className="setup-note truncate">{wallpaperPath}</span> : null}
               </div>
             ) : null}
+            {/*
+             * The same miniature grid Settings has, because a name is not a
+             * wallpaper. Videos are parked to one frame and only play under the
+             * pointer, exactly as in Settings — six live decoders behind the glass
+             * on a two-core laptop is the lag the app has already been charged with
+             * once.
+             */}
+            {background === 'custom' && stock.items.length ? (
+              <div className="stock-wallpapers" role="listbox" aria-label="Stock wallpapers">
+                {stock.items.map((item) => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    role="option"
+                    aria-selected={wallpaperPath === item.path}
+                    className={`stock-tile ${wallpaperPath === item.path ? 'is-active' : ''}`}
+                    onClick={() => chooseStock(item)}
+                    data-tip={item.name}
+                  >
+                    {item.kind === 'video' ? (
+                      <video
+                        src={toMediaUrl(item.path)}
+                        muted
+                        loop
+                        playsInline
+                        preload="metadata"
+                        onLoadedData={(e) => {
+                          const v = e.currentTarget;
+                          if (v.paused) v.currentTime = Math.min(0.6, (v.duration || 1) / 3);
+                        }}
+                        onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
+                        onMouseLeave={(e) => {
+                          const v = e.currentTarget;
+                          v.pause();
+                          v.currentTime = Math.min(0.6, (v.duration || 1) / 3);
+                        }}
+                      />
+                    ) : (
+                      <img src={toMediaUrl(item.path)} alt="" loading="lazy" />
+                    )}
+                    <span className="stock-tile-name truncate">{item.name}</span>
+                    {item.kind === 'video' ? (
+                      <span className="stock-tile-flag" aria-hidden>
+                        <Icon name="theatre" size={10} />
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        )}
+
+        {step === 'system' && (
+          <section className="setup-body">
+            <p className="setup-lead">
+              Two questions about the machine, and ChaosX stops asking.
+            </p>
+            <div className="setup-check-list">
+              <label className="setup-check">
+                <input
+                  type="checkbox"
+                  checked={pin}
+                  onChange={(e) => setPin(e.target.checked)}
+                />
+                <span className="setup-check-text">
+                  <strong>Pin to the taskbar</strong>
+                  <span>
+                    Keeps ChaosX one click away when it is not open. Windows asks you
+                    once, as soon as setup finishes, and the icon appears the moment
+                    you accept.
+                  </span>
+                </span>
+              </label>
+              <label className="setup-check">
+                <input
+                  type="checkbox"
+                  checked={startup}
+                  onChange={(e) => setStartup(e.target.checked)}
+                />
+                <span className="setup-check-text">
+                  <strong>Start when Windows signs in</strong>
+                  <span>
+                    Appears in Task Manager&apos;s Startup apps, where it can be
+                    turned off again by hand.
+                  </span>
+                </span>
+              </label>
+            </div>
+            <p className="setup-note">
+              Closing the window will keep playing in the system tray rather than
+              stop the record. That is a setting too, under Settings &gt; System.
+            </p>
           </section>
         )}
 
@@ -347,7 +512,7 @@ export const SetupWizard: React.FC<Props> = ({ onPinFolder, onDone }) => {
               <Icon name="next" size={12} />
             </button>
           ) : (
-            <button type="button" className="liquid-glass-btn small-text squish setup-next" onClick={onDone}>
+            <button type="button" className="liquid-glass-btn small-text squish setup-next" onClick={finish}>
               Start listening
               <Icon name="check" size={12} />
             </button>

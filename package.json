@@ -1,5 +1,5 @@
 {
-  "name": "silent-chaos-music-player",
+  "name": "chaosx",
   "version": "1.0.0",
   "description": "ChaosX Mark x1.0",
   "author": "ChaosX",
@@ -70,6 +70,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/wallpapers",
+        "to": "wallpapers",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -94,12 +101,13 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": true,
       "shortcutName": "ChaosX",
       "uninstallDisplayName": "ChaosX",
-      "artifactName": "ChaosX-${version}-Setup.${ext}"
+      "artifactName": "ChaosX Mark x1.0-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "ChaosX-${version}-portable.${ext}"
+      "artifactName": "ChaosX Mark x1.0-portable.${ext}"
     }
   }
 }

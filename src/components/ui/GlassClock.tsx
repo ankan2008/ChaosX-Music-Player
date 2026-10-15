@@ -58,9 +58,36 @@ const GlassClock: React.FC<GlassClockProps> = ({
 }) => {
   const [now, setNow] = useState(() => new Date());
 
+  /*
+   * The interval keeps the clock while the page is awake; the three listeners are
+   * what make it honest again the moment the page is looked at.
+   *
+   * A hidden or minimised window has its timers clamped to roughly one fire a
+   * minute, and `backgroundThrottling: false` does not lift that — it refuses the
+   * *occlusion* path into hiddenness, not the minimise or tray path, and this app
+   * parks in the tray by default. So the interval drifts behind by however long the
+   * window was put away and then catches up in minute-sized steps, which is exactly
+   * the reported symptom: a minute that takes too long to arrive, and a clock that
+   * can sit on the old time for several minutes after the window comes back.
+   *
+   * Reading the clock again on the way in costs nothing and closes that gap to one
+   * frame, which is the only place a clock is allowed to be wrong.
+   */
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
+    const tick = () => setNow(new Date());
+    const timer = window.setInterval(tick, 1000);
+    const catchUp = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', catchUp);
+    window.addEventListener('focus', catchUp);
+    window.addEventListener('pageshow', catchUp);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', catchUp);
+      window.removeEventListener('focus', catchUp);
+      window.removeEventListener('pageshow', catchUp);
+    };
   }, []);
 
   const hour12 = now.getHours() % 12 || 12;

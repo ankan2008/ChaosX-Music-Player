@@ -444,14 +444,25 @@ class MpvWindowHost {
         return { ok: true, before: '0x' + before.toString(16), after: '0x' + before.toString(16) };
       }
       /*
-       * `WS_CAPTION` and `WS_SYSMENU` are in here for the same reason the other
-       * three are: `stripFrame` takes all five off for the takeover, and a restore
-       * that only puts back three leaves the window borderless with no close box
-       * once the user leaves fullscreen. Measured on the first round trip — style
-       * went 0x16cf0000 down to 0x16000000 and back up to only 0x16070000.
+       * Four bits, not five: `WS_CAPTION` deliberately stays off.
+       *
+       * `stripFrame` takes all five off for the takeover, and this used to hand all
+       * five back — which is what painted the classic Windows caption for a frame on
+       * every maximize and restore. `SWP_FRAMECHANGED` makes the window recalculate
+       * its non-client area into the *default* frame, and the default frame has a
+       * titlebar; on a machine whose DWM re-themes fast the flash is invisible, and
+       * on an Intel panel it reads as a Windows 7 caption dropped over the app. The
+       * measurement is in the note under the `RedrawWindow` below: this call has left
+       * an unpainted caption here before, and the honest fix is not to ask for one.
+       *
+       * Nothing is lost by leaving it off. The page draws its own title strip, its own
+       * three buttons and its own double-click target, so the only thing the operating
+       * system still needs is the resize border (`WS_THICKFRAME`), the taskbar entry
+       * and Alt+F4 (`WS_SYSMENU`), and the minimise and maximize boxes that
+       * `WS_SYSMENU` requires to be live.
        */
       const after =
-        (before | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX) >>> 0;
+        (before | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX) >>> 0;
       if (after === before) return { ok: true, before: '0x' + before.toString(16), after: '0x' + before.toString(16) };
       api.SetWindowLongPtr(h, GWL_STYLE, BigInt(after));
       api.SetWindowPos(h, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
@@ -470,6 +481,40 @@ class MpvWindowHost {
     } catch (e) {
       const msg = (e as Error).message;
       this.failures.push('restoreFrame: ' + msg);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /**
+   * Clear `WS_CAPTION` once, at boot, and keep it cleared.
+   *
+   * Electron creates this window with the caption bit set — `frame: true` with
+   * `titleBarStyle: 'hidden'` hides the *drawing*, not the style — so a window that
+   * has never been through `stripFrame` still has a classic titlebar for the shell to
+   * paint. That is what shows up as a Windows 7 caption flickering over the app during
+   * the maximize and restore animations: the frame recompute those transitions trigger
+   * rebuilds the non-client area, and a caption bit is all it needs to draw one.
+   *
+   * Taking the bit off at boot, before the window has ever been shown or zoomed, means
+   * there is nothing to rebuild. This is the one moment it is safe to send
+   * `SWP_FRAMECHANGED` to this window, and the reason `restoreFrame` no longer hands
+   * the bit back is what makes it permanent.
+   */
+  hideCaption(win: BrowserWindow): { ok: boolean; before?: string; after?: string; error?: string } {
+    const api = this.api;
+    if (!api) return { ok: false, error: this.initError ?? 'koffi is not available' };
+    try {
+      const h = win.getNativeWindowHandle().readBigInt64LE(0);
+      const before = Number(api.GetWindowLongPtr(h, GWL_STYLE)) >>> 0;
+      const after = (before & ~WS_CAPTION) >>> 0;
+      if (after === before) return { ok: true, before: '0x' + before.toString(16), after: '0x' + after.toString(16) };
+      api.SetWindowLongPtr(h, GWL_STYLE, BigInt(after));
+      api.SetWindowPos(h, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+      const now = Number(api.GetWindowLongPtr(h, GWL_STYLE)) >>> 0;
+      return { ok: true, before: '0x' + before.toString(16), after: '0x' + now.toString(16) };
+    } catch (e) {
+      const msg = (e as Error).message;
+      this.failures.push('hideCaption: ' + msg);
       return { ok: false, error: msg };
     }
   }

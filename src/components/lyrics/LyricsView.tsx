@@ -119,13 +119,15 @@ const LyricsView: React.FC = () => {
   }, [notice]);
 
   /*
-   * Six controls, no heading and no source label.
+   * Seven glyphs, one row, no words on them.
    *
-   * The card already says what it holds by holding it, and the two lines of
-   * lettering above the row were costing the sheet two rows of words on a panel
-   * that only ever shows seven. The grid is the layout in both modes — six
-   * columns in the library's own lyrics card, three by two in the takeover view —
-   * and the order below is the order they land in either case.
+   * The strip used to be six labelled pills, which is six strings fighting for a
+   * four-hundred-pixel card — and the labels were the reason the row wrapped to two
+   * lines on one laptop and to three on another. What each control does is still
+   * discoverable: the glyph says it, and `data-tip` is the name, there the moment
+   * the pointer finds the button. That also frees the takeover view from the
+   * three-by-two grid it needed to fit the same words, so both modes read as one row
+   * in the same order.
    */
   const actions = (
     <div className={`lyrics-actions${hasLyrics ? '' : ' is-brief'}`}>
@@ -133,22 +135,20 @@ const LyricsView: React.FC = () => {
         type="button"
         className="lyrics-import"
         onClick={importFromFile}
-        data-tip="Import a .lrc or .txt file"
+        data-tip="Import — a .lrc or .txt file"
         aria-label="Import lyrics from a file"
       >
-        <Icon name="plus" size={13} />
-        Import
+        <Icon name="plus" size={15} />
       </button>
       {hasLyrics || plainLyrics ? (
         <button
           type="button"
           className="lyrics-import"
           onClick={() => void save()}
-          data-tip="Save these lyrics as an .lrc beside the song"
+          data-tip="Save — as an .lrc beside the song"
           aria-label="Save lyrics to the song's folder"
         >
-          <Icon name="download" size={13} />
-          Save
+          <Icon name="download" size={15} />
         </button>
       ) : null}
       {hasLyrics || plainLyrics ? (
@@ -156,26 +156,19 @@ const LyricsView: React.FC = () => {
           type="button"
           className="lyrics-import"
           onClick={() => void remove()}
-          data-tip="Delete the .lrc beside the song"
+          data-tip="Delete — the .lrc beside the song"
           aria-label="Delete the lyrics file"
         >
-          <Icon name="delete" size={13} />
-          Delete
+          <Icon name="delete" size={15} />
         </button>
       ) : null}
       {/*
        * Read-all mode. A sheet whose timings do not fit this recording highlights
-       * the wrong line once a bar, which is worse than no highlight at all — so
-       * this takes the travelling glass away and puts every line at the same
-       * weight, size and brightness, and leaves the panel still.
+       * the wrong line once a bar, which is worse than no highlight at all, so this
+       * takes the travelling glass away and puts every line at the same weight.
        *
-       * The label names the reading you are about to get, which is why it changes
-       * when pressed: "All At Once" is what the press gives you, and once you are
-       * there the press gives you the other one back.
-       *
-       * Gone when there is no sheet, because with nothing on the page the two
-       * readings are the same reading and the control is a choice between two
-       * nothings.
+       * With the label gone the pressed state has to live in the button itself,
+       * which is what `is-on` is for, and the tip names the reading you get next.
        */}
       {hasLyrics || plainLyrics ? (
         <button
@@ -183,12 +176,10 @@ const LyricsView: React.FC = () => {
           className={`lyrics-import lyrics-flat-toggle ${lyricsFlat ? 'is-on' : ''}`}
           onClick={() => setLyricsFlat(!lyricsFlat)}
           aria-pressed={lyricsFlat}
-          data-tip={
-            lyricsFlat ? 'Follow one line at a time' : 'Show every line at the same weight'
-          }
+          data-tip={lyricsFlat ? 'Line by line' : 'All at once'}
+          aria-label={lyricsFlat ? 'Line by line' : 'All at once'}
         >
-          <Icon name="lyrics" size={13} />
-          <span className="lyrics-flat-label">{lyricsFlat ? 'Line By Line' : 'All At Once'}</span>
+          <Icon name="lyrics" size={15} />
         </button>
       ) : null}
       {hasLyrics ? (
@@ -196,11 +187,30 @@ const LyricsView: React.FC = () => {
           ref={timingRef}
           type="button"
           className="lyrics-import"
-          data-tip="Shift the lyric timing for this session"
+          data-tip="Lyrics timing"
           aria-label="Lyrics timing"
         >
-          <Icon name="clock" size={13} />
-          Lyrics timing
+          <Icon name="clock" size={15} />
+        </button>
+      ) : null}
+      {/*
+       * Put this song's words away, card and all.
+       *
+       * Not the delete, and not the permanent hide the file keeps: this only
+       * unloads what was fetched, and the next track — or this one again, once
+       * another has played between — asks LRCLIB fresh. Refresh is the way back.
+       */}
+      {hasLyrics || plainLyrics ? (
+        <button
+          type="button"
+          className="lyrics-import"
+          onClick={() => {
+            if (currentTrack) usePlayerStore.getState().setLyricsHiddenFor(currentTrack.id);
+          }}
+          data-tip="Hide lyrics — until Refresh or the next song"
+          aria-label="Hide lyrics"
+        >
+          <Icon name="hide" size={15} />
         </button>
       ) : null}
       <button
@@ -208,11 +218,10 @@ const LyricsView: React.FC = () => {
         className="lyrics-import"
         onClick={refresh}
         disabled={state === 'searching'}
-        data-tip="Search LRCLIB again for this track"
+        data-tip="Refresh — search LRCLIB again"
         aria-label="Search LRCLIB again"
       >
-        <Icon name="refresh" size={13} />
-        Refresh
+        <Icon name="refresh" size={15} />
       </button>
     </div>
   );
@@ -314,7 +323,7 @@ const LyricsView: React.FC = () => {
             {!currentTrack
               ? 'Play something to see lyrics'
               : state === 'hidden'
-                ? 'Lyrics hidden for this song'
+                ? 'Lyrics hidden — Refresh, or the next song, brings them back'
                 : searching
                   ? 'Searching LRCLIB…'
                   : state === 'missing'

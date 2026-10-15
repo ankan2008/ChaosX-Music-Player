@@ -243,7 +243,7 @@ const SLOT = { hrInit: 3, addButtons: 3 + 5 + 1 + 6, updateButtons: 3 + 5 + 1 + 
 function loadIcons(): Map<Glyph, number> {
   if (!api) return icons;
   if (icons.size) return icons;
-  const dir = path.join(app.getPath('temp'), 'silent-chaos-thumbbar');
+  const dir = path.join(app.getPath('temp'), 'chaosx-thumbbar');
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch {
@@ -379,7 +379,7 @@ const GLYPHS: Glyph[] = ['previous', 'play', 'pause', 'next', 'back5', 'forward5
  */
 export function applyThumbIcons(received: Record<string, string>): void {
   if (!api) return;
-  const dir = path.join(app.getPath('temp'), 'silent-chaos-thumbbar');
+  const dir = path.join(app.getPath('temp'), 'chaosx-thumbbar');
   const IMAGE_ICON = 1;
   const LR_LOADFROMFILE = 0x10;
   const LR_SHARED = 0x8000;

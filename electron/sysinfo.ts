@@ -112,28 +112,92 @@ function sampleCpu(): { load: number; busyThreads: number } {
 }
 
 /**
- * Physical cores, asked of WMI once.
+ * Physical cores, asked of the kernel.
  *
- * `os.cpus()` lists logical processors, so on an eight-core machine with SMT it
- * says sixteen and the "cores" figure has nowhere to come from. The alternative
- * is `GetLogicalProcessorInformation` and hand-parsing a variable-length record
- * array over FFI, which is a lot of surface to get subtly wrong for one number
- * that never changes — so this asks the OS once, off the critical path, and
- * falls back to the thread count if the answer does not arrive.
+ * `os.cpus()` lists logical processors, so on a 2-core/4-thread machine it says
+ * four and the "cores" figure has nowhere to come from. This used to ask
+ * PowerShell for `Win32_Processor.NumberOfCores` with a six-second timeout — and
+ * a cold PowerShell start on a two-core laptop routinely exceeds six seconds, so
+ * the call failed, the code fell back to `os.cpus().length`, and the card printed
+ * "4 cores / 4 threads" on both of the machines it is meant to describe. It also
+ * cached that fallback permanently, so the answer never got better. Measured on
+ * the Inspiron, where it was wrong on every single launch.
+ *
+ * Asked through the *Ex* variant deliberately. The plain
+ * `GetLogicalProcessorInformation` returns fixed-size records whose length
+ * depends on which SDK the headers were built against — measured here it hands
+ * back 352 bytes, which does not divide by the documented 24 and leaves a
+ * remainder, and reading it at 24 produces garbage relationship codes that
+ * happen to count out right. The Ex form prefixes every record with its own
+ * `Size`, so the walk is self-describing and cannot be wrong about the layout.
+ * Asking for `RelationProcessorCore` alone means every record returned is a core.
+ *
+ * koffi is already loaded in this file for the battery, so this adds no dependency.
  */
+const RELATION_PROCESSOR_CORE = 0;
+const EX_HEADER_BYTES = 8;
+
+function coresFromKernel(): number | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const koffi = require('koffi');
+    const kernel32 = koffi.load('kernel32.dll');
+    const query = kernel32.func(
+      'bool __stdcall GetLogicalProcessorInformationEx(uint32, void*, uint32*)',
+    );
+    for (let capacity = 4096; capacity <= 262144; capacity *= 4) {
+      const records = Buffer.alloc(capacity);
+      // The out-length is passed as a plain buffer rather than learning koffi's
+      // scalar-out-param convention for one uint32.
+      const size = Buffer.alloc(4);
+      size.writeUInt32LE(records.length, 0);
+      if (!query(RELATION_PROCESSOR_CORE, records, size)) {
+        const needed = size.readUInt32LE(0);
+        // Only retry when it said "bigger" — anything else is a real failure.
+        if (needed > records.length) continue;
+        return null;
+      }
+      const bytes = size.readUInt32LE(0);
+      let found = 0;
+      let off = 0;
+      while (off + EX_HEADER_BYTES <= bytes) {
+        const recordSize = records.readUInt32LE(off + 4);
+        // A zero length would spin forever; treat it as no answer at all.
+        if (recordSize < EX_HEADER_BYTES) return null;
+        if (records.readUInt32LE(off) === RELATION_PROCESSOR_CORE) found++;
+        off += recordSize;
+      }
+      return found > 0 ? found : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 let cores: number | null = null;
 
 function askCores(): void {
   if (cores !== null) return;
+  const direct = coresFromKernel();
+  if (direct !== null) {
+    cores = direct;
+    return;
+  }
+  /*
+   * The WMI route is a last resort, and it does not get to decide the answer
+   * forever: leaving `cores` null here means the next sample tries the kernel
+   * call again, rather than locking in a wrong number for the session.
+   */
   const script =
     '(Get-CimInstance -ClassName Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum';
   execFile(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-Command', script],
-    { windowsHide: true, timeout: 6000 },
+    { windowsHide: true, timeout: 15000 },
     (err, out) => {
       const n = Number(String(out).trim());
-      cores = !err && Number.isFinite(n) && n > 0 ? n : os.cpus().length;
+      if (!err && Number.isFinite(n) && n > 0) cores = n;
     },
   );
 }

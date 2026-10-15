@@ -67,6 +67,7 @@ export function useRemoteLyrics(): {
 } {
   const currentTrack = usePlayerStore((s) => s.currentTrack);
   const updateTrack = usePlayerStore((s) => s.updateTrack);
+  const lyricsHiddenFor = usePlayerStore((s) => s.lyricsHiddenFor);
   const [state, setState] = useState<LyricsState>('none');
   const [source, setSource] = useState<'lrclib' | 'import' | null>(null);
   const [rescaled, setRescaled] = useState(false);
@@ -117,12 +118,16 @@ export function useRemoteLyrics(): {
      * The user put this song's words away, so nothing is looked up and nothing is
      * shown — including the lyrics the scan already wrote onto the track object.
      *
+     * Two ways to be away: `hideLyrics` persists against the file until Refresh, and
+     * `lyricsHiddenFor` is the card's own Hide button, which lasts this playback and
+     * no longer. Both empty the panel the same way and leave the card standing.
+     *
      * The write is guarded on the track actually carrying something. Without the
      * guard this clears the fields, the effect re-runs because its key includes
      * the lyric length, it clears them again, and React kills the renderer with
      * "Maximum update depth exceeded" — the same trap `apply` documents below.
      */
-    if (areLyricsHidden(currentTrack)) {
+    if (areLyricsHidden(currentTrack) || lyricsHiddenFor === currentTrack.id) {
       forceRef.current = false;
       if (currentTrack.lyrics?.length || currentTrack.plainLyrics) {
         updateTrack({ id: currentTrack.id, lyrics: null, plainLyrics: null });
@@ -214,7 +219,16 @@ export function useRemoteLyrics(): {
      * before the library found the song keeps showing "No words for this track
      * yet" over a full lyric set.
      */
-  }, [currentTrack?.id, currentTrack?.duration, currentTrack?.lyrics?.length, apply, nonce]);
+  }, [
+    currentTrack?.id,
+    currentTrack?.duration,
+    currentTrack?.lyrics?.length,
+    apply,
+    nonce,
+    // Pressing Hide has to reach the branch above, and it is the only thing that
+    // changes when the track itself has not.
+    lyricsHiddenFor,
+  ]);
 
   /**
    * Ask LRCLIB again for the track that is already loaded.
@@ -234,6 +248,9 @@ export function useRemoteLyrics(): {
       unhideLyrics(track);
       forgetRemoteLyrics(track);
     }
+    // Both kinds of away, or the button that says "search again" would be answered
+    // by the branch that looks nothing up.
+    usePlayerStore.getState().setLyricsHiddenFor(null);
     forceRef.current = true;
     setNonce((n) => n + 1);
   }, []);

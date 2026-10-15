@@ -57,7 +57,8 @@ export interface HandoffState {
 export function toMediaUrl(filePath: string): string {
   /*
    * An app-served asset is already a URL, but only *relative to the document*.
-   * `/brand/wallpaper.jpg` is the background every fresh install ships with, and
+   * `/brand/wallpapers/train_upscaled.jpg` is the background every fresh
+   * install ships with, and
    * under `file://` a leading slash is the root of the drive — so the packaged app
    * asked for `C:\brand\wallpaper.jpg` and painted nothing. Dropping the slash to
    * a `.` is the one spelling that resolves in dev, where the document is the dev

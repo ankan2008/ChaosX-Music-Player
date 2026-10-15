@@ -4,12 +4,12 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import os from 'os';
 import http from 'http';
-import { Readable } from 'stream';
 import { execFile } from 'child_process';
 import { analyzeLoudness, extractPeaks, extractPoster, ffmpegAvailable, writeTags, type TagWrite } from './ffmpeg';
 import { registerMpvIpc, mpvEngine } from './mpv-engine';
 import { mpvWindow, type VideoSlot } from './mpv-window';
 import { initThumbButtons, applyThumbIcons } from './taskbar-buttons';
+import { requestTaskbarPin, taskbarPinState } from './taskbar-pin';
 import { appBar, type BarEdge } from './appbar';
 import { armTaskbarHover, disarmTaskbarHover, taskbar } from './taskbar';
 import { registerSysInfo } from './sysinfo';
@@ -22,6 +22,49 @@ import { registerSysInfo } from './sysinfo';
  * credits. Keep it in step with `version` in package.json and the credits card.
  */
 const APP_MARK = 'ChaosX Mark x1.0';
+
+/** The id the installer's shortcut declares, the id this process declares, and the
+ *  key the shell reads `registerShellIdentity` below writes. All three have to agree
+ *  or the media tile and the taskbar button are two different apps. */
+const APP_USER_MODEL_ID = 'com.chaosx.player';
+
+/*
+ * The identity the shell groups this process's windows under.
+ *
+ * Windows matches a taskbar button to a window by AppUserModelID, and Electron
+ * does not claim the installer's id on its own — it ships as `com.github.Electron`
+ * unless the app says otherwise. The pinned shortcut written below declares
+ * `com.chaosx.player`, so with the process declaring something else the button the
+ * user hovers is the shortcut's, not the window's: a tile with no live thumbnail
+ * under it and none of the transport buttons that `taskbar-buttons.ts` successfully
+ * added to the real HWND. Setting it here is what makes the two agree.
+ */
+app.setAppUserModelId(APP_USER_MODEL_ID);
+
+/*
+ * A throw in the main process is not a reason to stop playing music.
+ *
+ * Electron's default handler for an uncaught exception puts up a modal — "A
+ * JavaScript error occurred in the main process" — over the whole desktop, with
+ * nothing behind it but OK. That is the right answer for a server that must not
+ * keep serving, and the wrong one for a player: the process is usually still
+ * perfectly healthy, the failure was one tick of one stream, and the dialog
+ * covers a song that is still playing. Both laptops were showing it, and it was
+ * being read as a crash.
+ *
+ * So the error is written where it can be found instead of where it can be
+ * clicked, and repeats are collapsed — a fault inside a per-second pump would
+ * otherwise fill the log in a few seconds.
+ */
+const seenFaults = new Map<string, number>();
+process.on('uncaughtException', (e: unknown) => {
+  const key = `${(e as { code?: string })?.code ?? ''}|${e instanceof Error ? e.message : String(e)}`;
+  const first = seenFaults.get(key);
+  const now = Date.now();
+  if (first !== undefined && now - first < 60_000) return;
+  seenFaults.set(key, now);
+  console.error('[main] uncaught:', e);
+});
 
 const AUDIO_MIME: Record<string, string> = {
   mp3: 'audio/mpeg',
@@ -544,16 +587,6 @@ function createWindow(): void {
      * is the takeover's whole trick — the same call answers with the monitor and
      * swallows the taskbar.
      */
-    /*
-     * The reveal is gated on the renderer, not on this event.
-     *
-     * `ready-to-show` is the first frame, not the first frame of anything worth
-     * looking at: the window used to appear as a dark rectangle that filled in a beat
-     * later, which is the black window reported at boot and after a restart. So the
-     * page says when it has composed, and the window goes up with something already in
-     * it. A timer sits behind that — a window that waits forever on a wedged renderer
-     * is worse than one that shows a frame early.
-     */
     let revealed = false;
     const reveal = () => {
       if (revealed) return;
@@ -579,11 +612,19 @@ function createWindow(): void {
        */
       initThumbButtons(win);
     };
-    ipcMain.once('window:ready', reveal);
-    setTimeout(() => {
-      ipcMain.removeListener('window:ready', reveal);
-      reveal();
-    }, 3000);
+    /*
+     * Nothing to wait for any more.
+     *
+     * The reveal used to be gated on the page saying it had composed, because
+     * `ready-to-show` is the first frame rather than the first frame of anything
+     * worth looking at: the window appeared as a dark rectangle that filled in a beat
+     * later, which is the black window reported at boot and after a restart. The boot
+     * screen now lives inside this page, so the first frame *is* something worth
+     * looking at — and the hand-off through IPC had started buying a race instead of
+     * a fix, since a page that says it is ready three seconds late shows nothing at
+     * all and one that says it early shows a half-drawn interface either way.
+     */
+    reveal();
   });
 
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
@@ -618,6 +659,20 @@ function createWindow(): void {
    */
   const frame = mpvWindow.restoreFrame(mainWindow);
   if (!frame.ok) console.warn('[window] could not restore the sizing frame:', frame.error);
+  /*
+   * And the caption bit back off again, permanently.
+   *
+   * `restoreFrame` above exists to hand back `WS_THICKFRAME` and `WS_MAXIMIZEBOX`,
+   * which `transparent: true` clears — but Electron still creates the window with
+   * `WS_CAPTION`, and a window that has a caption bit has a caption the shell can
+   * paint. Every maximize and restore recomputes the non-client area, and on the
+   * weaker of the two test machines that recompute arrives as a classic Windows title
+   * bar for a frame before the page's own strip is composited over it. The strip the
+   * page draws is the titlebar now, so the bit has no job left and comes off once,
+   * here, while the window is neither shown nor zoomed and a frame recompute is safe.
+   */
+  const caption = mpvWindow.hideCaption(mainWindow);
+  if (!caption.ok) console.warn('[window] could not drop the caption frame:', caption.error);
   /*
    * No `hookWindowMessage(0x00a3)` here, though one was tried.
    *
@@ -2491,26 +2546,117 @@ function keepStoredArt(
   return merged;
 }
 
-ipcMain.handle('library:save-cache', async (_event, data: unknown) => {
+/*
+ * Writing the index: a draft, a throttle, and one write at a time.
+ *
+ * The scan used to hand the *whole* index back over IPC every 300 ms of its run, and
+ * this handler answered each one by reading the file, parsing it, merging, stringifying
+ * and rewriting it. The file is 23 MB once the library is scanned, so a first run —
+ * the one run that has to build that file from nothing — paid for a full copy of
+ * everything it had found so far roughly three times a second, for as long as it took:
+ * measured on the installed build as 2.3 GB of RAM, 100% of both cores, a vinyl turning
+ * at one frame a second, and five to ten minutes of it. It is also self-worsening,
+ * because the serialising is what slows the scan, and a slower scan means more saves.
+ *
+ * So the renderer sends only what it has learned since the last write, and this holds
+ * the assembled index in `cacheDraft` while a scan is running rather than rebuilding it
+ * from disk each time. Two clocks keep the cost bounded: a flush fires at most once
+ * every CACHE_FLUSH_MS however long the burst, so a ten-minute scan writes ~150 times
+ * instead of ~1800, and the draft is dropped once the writing has stopped for
+ * CACHE_DRAFT_LIFE_MS, which returns the 23 MB to the system and keeps the promise
+ * `readLibraryIndex` makes about not pinning a parse for the life of the app.
+ *
+ * Writes are chained rather than overlapped. A second 23 MB write beside the first is
+ * the disk thrash that was under the whole measurement.
+ */
+const CACHE_FLUSH_MS = 4000;
+const CACHE_DRAFT_LIFE_MS = 30000;
+
+let cacheDraft: Record<string, LibraryCacheEntry> | null = null;
+let cacheFlushTimer: NodeJS.Timeout | null = null;
+let cacheSettleTimer: NodeJS.Timeout | null = null;
+let cacheWrites: Promise<void> = Promise.resolve();
+
+async function writeIndex(base: Record<string, LibraryCacheEntry>): Promise<void> {
   try {
     const file = libraryCacheFile();
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
-    const incoming = (
-      data && typeof data === 'object' ? data : {}
-    ) as Record<string, LibraryCacheEntry>;
-    // Read from disk before overwriting it, so the merge has something to keep.
-    const stored = await readLibraryIndex();
-    const next = stored ? keepStoredArt(stored, incoming) : incoming;
-    // Written beside the target and renamed over it, so an interrupted
-    // write can never leave a half-written cache behind.
+    // Stringified before the first await, so a patch cannot mutate mid-serialise.
+    const text = JSON.stringify(base);
     const tmp = `${file}.tmp`;
-    await fs.promises.writeFile(tmp, JSON.stringify(next), 'utf8');
+    await fs.promises.writeFile(tmp, text, 'utf8');
     await fs.promises.rename(tmp, file);
-    return true;
   } catch {
-    return false;
+    // A cache that failed to persist costs the next launch a rescan, not this one.
   }
+}
+
+function scheduleCacheFlush(): void {
+  if (cacheFlushTimer) return;
+  cacheFlushTimer = setTimeout(() => {
+    cacheFlushTimer = null;
+    const base = cacheDraft;
+    if (!base) return;
+    cacheWrites = cacheWrites.then(() => writeIndex(base));
+  }, CACHE_FLUSH_MS);
+}
+
+ipcMain.on('library:patch-cache', async (_event, patch: unknown) => {
+  const { set, remove } = (patch ?? {}) as {
+    set?: Record<string, LibraryCacheEntry>;
+    remove?: string[];
+  };
+  if (!set && !remove) return;
+  if (!cacheDraft) {
+    const stored = await readLibraryIndex();
+    /*
+     * Safe to assign straight after the await: two bursts that overlap are served the
+     * one shared parse by `pendingIndex`, so they agree on the object, and a burst
+     * that arrives after the first has assigned never gets this far.
+     */
+    cacheDraft = stored ?? {};
+  }
+  const base = cacheDraft;
+  if (remove) for (const key of remove) delete base[key];
+  if (set) for (const [key, entry] of Object.entries(set)) {
+    if (!entry?.stamp || !entry.track) continue;
+    base[key] = keepStoredArt(base, { [key]: entry })[key] ?? entry;
+  }
+  scheduleCacheFlush();
+  if (cacheSettleTimer) clearTimeout(cacheSettleTimer);
+  cacheSettleTimer = setTimeout(() => {
+    cacheSettleTimer = null;
+    cacheDraft = null;
+  }, CACHE_DRAFT_LIFE_MS);
 });
+
+/*
+ * The same write the throttle runs, without waiting for the throttle, for the one
+ * moment where waiting is not on the table: `will-quit` runs to completion before the
+ * process is allowed to leave.
+ *
+ * The periodic writer is throttled, so a quit inside that window would throw away up
+ * to four seconds of scanning and the next launch would pay for it again. A separate
+ * temporary name keeps this clear of a write still in flight — both rename over the
+ * target, so whichever lands last wins and neither can leave a half file behind.
+ */
+function writeLibraryDraftSync(): void {
+  if (cacheFlushTimer) {
+    clearTimeout(cacheFlushTimer);
+    cacheFlushTimer = null;
+  }
+  const base = cacheDraft;
+  if (!base) return;
+  cacheDraft = null;
+  try {
+    const file = libraryCacheFile();
+    const tmp = `${file}.sync.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(base), 'utf8');
+    fs.renameSync(tmp, file);
+  } catch {
+    // Same refusal as the async writer: the next launch rescans.
+  }
+}
 
 /*
  * The playlists this app owns: `<userData>/playlists/<name>.m3u8`, one absolute audio
@@ -2722,28 +2868,198 @@ ipcMain.handle('app:get-version', () => app.getVersion());
 ipcMain.handle('app:get-platform', () => process.platform);
 
 /*
- * Launch with Windows.
+ * Launch with Windows, told straight.
  *
  * `open-at-login` is the only honest way to do this on Windows 11: it writes the
  * per-user login item the shell itself manages, so the entry appears in Task
- * Manager's Startup tab where the user can see and kill it. Writing the `Run`
- * key by hand would work too and is what older apps do, but it is invisible
- * there, which reads as something having installed itself.
+ * Manager's Startup tab where the user can see and kill it. Writing the `Run` key
+ * by hand would work too and is what older apps do, but it is invisible there,
+ * which reads as something having installed itself.
+ *
+ * What `getLoginItemSettings()` cannot tell you is that the user *has* killed it
+ * there. Task Manager does not delete a disabled login item — it leaves the `Run`
+ * value in place and writes a 12-byte marker next to it under
+ * `Explorer\StartupApproved\Run`, whose first byte is 0x03 when enabled and 0x02
+ * when disabled. Electron reads only the `Run` key, so an app switched off in
+ * Task Manager kept reporting "on" to its own Settings, which is the disagreement
+ * being fixed here. Read: `reg query` on the marker key, once, off the boot path.
  */
-ipcMain.handle('app:set-auto-launch', (_event, on: boolean) => {
+const STARTUP_MARKER_KEY =
+  'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run';
+
+/** The name Electron registers this app under in the `Run` key. */
+/*
+ * The name Electron writes this app's login item under.
+ *
+ * Not a free choice. On Windows Electron takes the value name from the process's
+ * AppUserModelID once one has been declared, and from `electron.app.<app name>`
+ * before that — which is why the same install has appeared in Task Manager's
+ * Startup list as `electron.app.silent-chaos-music-player`, as `electron.app.ChaosX`
+ * and now as `com.chaosx.player`. Reading the live `Run` key settles it: the third is
+ * the one the installed app writes, and `setLoginItemSettings` offers no `name` to
+ * override it with.
+ *
+ * Getting this wrong is not cosmetic. It is the name the shell's disabled-marker is
+ * keyed by, so a mismatch reads Task Manager's veto as "no marker, therefore enabled"
+ * forever; and it is the name the stale-entry sweep refuses to delete, so a mismatch
+ * there deletes the app's one working login item on every boot.
+ */
+function loginItemName(): string {
+  return app.isPackaged ? APP_USER_MODEL_ID : `electron.app.${app.getName()}`;
+}
+
+function regQuery(key: string): Promise<string> {
+  return new Promise((resolve) => {
+    execFile('reg.exe', ['query', key], { windowsHide: true, timeout: 5000 }, (err, out) => {
+      resolve(err ? '' : String(out ?? ''));
+    });
+  });
+}
+
+/** 'disabled' only when the shell actually wrote a veto; absent means enabled. */
+function markerState(text: string, name: string): 'enabled' | 'disabled' {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const line = new RegExp(`^\\s*${escaped}\\s+REG_BINARY\\s+([0-9a-fA-F]+)`, 'm').exec(text);
+  if (!line) return 'enabled';
+  return /^02/i.test(line[1]) ? 'disabled' : 'enabled';
+}
+
+/**
+ * Delete the login items that launch *this* executable but are not the one Electron
+ * manages today.
+ *
+ * The app has registered itself under four names across its history — the appId,
+ * `electron.app.<name>` from before `app.setName`, the old npm name, and the bare
+ * `ChaosX` this build writes — and Electron only ever maintains its own. The residue
+ * is what the user saw: two rows for one install in Task Manager's Startup list, one
+ * of them unkillable because nothing owned it any more.
+ *
+ * The rule is the executable path, not the name. A `Run` value is stale here only if
+ * it points at the file this process is running from, so a similarly-named entry from
+ * another app cannot be swept up by mistake. The one exception is spelled out below.
+ *
+ * Sweeping is also the migration: if the entry being retired was the app's only one,
+ * autostart is re-registered under the current name in the same breath. Without that
+ * the fix for the duplicate rows would have been a quieter bug — the user's
+ * "start with Windows" silently off on the first boot of the new build.
+ */
+async function pruneLoginItemGhosts(): Promise<void> {
+  const runKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+  const text = await regQuery(runKey);
+  if (!text) return;
+  const mine = process.execPath.toLowerCase().replace(/"/g, '');
+  const keep = loginItemName();
+  const gone: string[] = [];
+  let held = false;
+  for (const line of text.split(/\r?\n/)) {
+    const at = line.indexOf('REG_SZ');
+    if (at < 0) continue;
+    const name = line.slice(0, at).trim();
+    const data = line.slice(at + 6).trim().replace(/"/g, '').toLowerCase();
+    if (!name) continue;
+    if (name === keep) {
+      held = true;
+      continue;
+    }
+    /*
+     * `electron.app.Electron` is the signature of a dev run, which registers
+     * `electron.exe` rather than the app. Only the one pointing into this project's
+     * abandoned first copy is touched — a dev build from any other folder is that
+     * developer's business, not this player's.
+     */
+    const staleDev = name === 'electron.app.Electron' && data.includes('ai music player\\node_modules\\electron');
+    if (data === mine || staleDev) gone.push(name);
+  }
+  for (const name of gone) {
+    for (const key of [runKey, STARTUP_MARKER_KEY]) {
+      await new Promise<void>((resolve) => {
+        execFile('reg.exe', ['delete', key, '/v', name, '/f'], { windowsHide: true, timeout: 5000 }, () => resolve());
+      });
+    }
+  }
+  if (gone.length && !held) {
+    try {
+      app.setLoginItemSettings({ openAtLogin: true });
+    } catch {
+      // A refused registration is the old behaviour, not a reason to stop booting.
+    }
+  }
+  if (gone.length) console.log(`[startup] removed ${gone.length} stale login item(s): ${gone.join(', ')}`);
+}
+
+interface AutoLaunch {
+  /** The app asked for it, so the `Run` value exists. */
+  registered: boolean;
+  /** Task Manager switched it off there. */
+  vetoed: boolean;
+  /** What will actually happen at the next sign-in. */
+  enabled: boolean;
+}
+
+async function autoLaunchState(): Promise<AutoLaunch> {
+  let registered = false;
+  try {
+    /*
+     * Electron's own answer, deliberately not a read of the `Run` key: it is the one
+     * that knows which name it wrote the entry under, and that name has changed twice
+     * across this app's history. What it cannot answer is whether Task Manager has
+     * vetoed the entry, which is the marker read below.
+     */
+    registered = app.getLoginItemSettings().openAtLogin;
+  } catch {
+    registered = false;
+  }
+  if (!registered) return { registered: false, vetoed: false, enabled: false };
+  const vetoed = markerState(await regQuery(STARTUP_MARKER_KEY), loginItemName()) === 'disabled';
+  return { registered, vetoed, enabled: !vetoed };
+}
+
+ipcMain.handle('app:set-auto-launch', async (_event, on: boolean) => {
+  // Same refusal as the taskbar pin: a dev run must not register `electron.exe` as
+  // a login item on the machine it is being developed on.
+  if (!app.isPackaged) return { ok: false, error: 'dev build' };
   try {
     app.setLoginItemSettings({ openAtLogin: !!on });
-    return { ok: true };
+    if (on) {
+      /*
+       * Clear the shell's veto, because re-adding the `Run` value does not. Without
+       * this the toggle could be dragged off and on all day and the app would still
+       * not start at sign-in, while its own Settings said it would. Deleting a
+       * marker that is not there is an error from `reg.exe` and costs nothing.
+       */
+      await new Promise<void>((resolve) => {
+        execFile(
+          'reg.exe',
+          ['delete', STARTUP_MARKER_KEY, '/v', loginItemName(), '/f'],
+          { windowsHide: true, timeout: 5000 },
+          () => resolve(),
+        );
+      });
+      // Turning it on is also the moment the user is looking, so any older
+      // registrations of the same executable go with it.
+      await pruneLoginItemGhosts();
+    }
+    return { ok: true, ...(await autoLaunchState()) };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
 });
 
-ipcMain.handle('app:get-auto-launch', () => {
+ipcMain.handle('app:get-auto-launch', async () => {
+  /*
+   * `null` from a dev run, rather than a reading.
+   *
+   * A development launch has its own login item — `electron.app.Electron`, pointing
+   * at whatever `electron.exe` is installed — and reporting on it would put a
+   * number on the Settings toggle that has nothing to do with ChaosX. The caller
+   * treats null as "no answer" and leaves the stored preference alone, which is
+   * what `set-auto-launch`'s refusal above already implies.
+   */
+  if (!app.isPackaged) return null;
   try {
-    return app.getLoginItemSettings().openAtLogin;
+    return await autoLaunchState();
   } catch {
-    return false;
+    return null;
   }
 });
 
@@ -2770,7 +3086,7 @@ function startDebugBridge(): void {
   // Screenshots must land outside the project tree: a write anywhere under
   // the Vite root triggers a full page reload, which wiped the running
   // session's state every time a capture was taken.
-  const shotsDir = path.join(app.getPath('temp'), 'silent-chaos-shots');
+  const shotsDir = path.join(app.getPath('temp'), 'chaosx-shots');
   let counter = 0;
 
   // Renderer console + load failures, so /console can explain a dead UI
@@ -3130,34 +3446,369 @@ app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
  */
 if (!app.isPackaged) app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
-/**
- * Carry the scanned-library caches across the rename to ChaosX.
+/*
+ * The packaged app keeps its own profile, and the development app keeps another.
  *
- * Electron derives `userData` from the product name, so a rename moves
- * `%APPDATA%\Silent Chaos Music Player` out of the way and leaves the new folder
- * empty. Without this the app would quietly throw away the library cache and every
- * ffmpeg loudness analysis and rescan the whole collection — hours of work for the
- * user, and nothing on screen to explain why.
+ * Electron derives `userData` — and so localStorage, the library cache, the
+ * playlists and the single-instance lock — from the application name. That name used
+ * to be the npm one, `silent-chaos-music-player`, so an installed ChaosX opened the
+ * *development* profile: a fresh install reported the statistics and pinned folders
+ * collected on the build machine, and because that profile had already been through
+ * setup, the setup wizard never appeared. Both halves of that are wrong for a shipped
+ * app, and the second one is the only chance a new user gets to choose anything.
+ *
+ * The npm package is now called `chaosx`, which is the folder the uninstaller clears
+ * and the name every leftover is filed under — and `chaosx` and `ChaosX` are the same
+ * folder on NTFS. So the two have to be pulled apart by name rather than by luck:
+ * the installed app is `ChaosX`, and a dev run is `ChaosX Dev`, which is a folder no
+ * installer will ever delete and no user will ever open.
+ */
+app.setName(app.isPackaged ? 'ChaosX' : 'ChaosX Dev');
+
+/*
+ * A profile to test a first run against, dev only.
+ *
+ * `CHAOSX_USER_DATA` points the whole profile — localStorage, the library cache, the
+ * playlists, and the single-instance lock — at a scratch folder. It exists because
+ * the one thing this app cannot be tested with is its own real profile: an installed
+ * ChaosX that is open holds the lock, so the dev build quits silently beside it, and
+ * every first-run path (the setup wizard, the shipped defaults) is unreachable from a
+ * profile that has already been through setup. Nothing here writes to the developer's
+ * own data, and nothing here is compiled into a shipped build.
+ */
+if (!app.isPackaged && process.env.CHAOSX_USER_DATA) {
+  app.setPath('userData', process.env.CHAOSX_USER_DATA);
+}
+
+/*
+ * Carry the scanned-library caches across every rename this app has done.
+ *
+ * Electron derives `userData` from the product name, so each rename moves the old
+ * folder out of the way and leaves the new one empty. Without this the app would
+ * quietly throw away the library cache and every ffmpeg analysis with it, and the
+ * user would watch the whole collection rescan for no reason they could see.
  *
  * Only files that are not already present are copied, so it is a one-way rescue
  * rather than a sync, and it stops mattering after the first run.
  */
+const LEGACY_PROFILE_NAMES = ['Silent Chaos Music Player', 'silent-chaos-music-player'];
+
 function migrateLegacyUserData(): void {
   const current = app.getPath('userData');
-  const legacy = path.join(path.dirname(current), 'Silent Chaos Music Player');
-  if (legacy === current || !fs.existsSync(legacy)) return;
-  try {
-    for (const entry of fs.readdirSync(legacy)) {
-      const from = path.join(legacy, entry);
-      const to = path.join(current, entry);
-      if (fs.existsSync(to)) continue;
-      fs.mkdirSync(path.dirname(to), { recursive: true });
-      fs.cpSync(from, to, { recursive: true });
+  for (const legacy of LEGACY_PROFILE_NAMES.map((name) => path.join(path.dirname(current), name))) {
+    if (legacy === current || !fs.existsSync(legacy)) continue;
+    try {
+      for (const entry of fs.readdirSync(legacy)) {
+        const from = path.join(legacy, entry);
+        const to = path.join(current, entry);
+        if (fs.existsSync(to)) continue;
+        fs.mkdirSync(path.dirname(to), { recursive: true });
+        fs.cpSync(from, to, { recursive: true });
+      }
+    } catch {
+      // A failed rescue is no worse than no rescue: the app simply rescans.
     }
-  } catch {
-    // A failed rescue is no worse than no rescue: the app simply rescans.
   }
 }
+
+/*
+ * The name and picture Windows shows for this app in its own surfaces.
+ *
+ * The taskbar button and the media tile in Quick Settings are drawn by the shell
+ * from the AppUserModelID, and for a desktop app the shell resolves that id to a
+ * display name and an icon through `HKCU\Software\Classes\AppUserModelId\<id>`. The
+ * installer writes no such key and Electron does not either, so the SMTC tile read
+ * "Unknown app" beside a cover the app had supplied perfectly well — the metadata
+ * came from `navigator.mediaSession`, and the identity from nowhere.
+ *
+ * This is the same registration Spotify writes for its own AUMID, measured on this
+ * machine: `DisplayName` plus an `IconUri` pointing at a PNG on disk. Under HKCU it
+ * needs no elevation, and it is idempotent — three `reg.exe` values per boot, and
+ * only when the answer has actually changed.
+ *
+ * `IconUri` has to be a file the shell can open, and everything in `public/` is
+ * inside the asar, which the shell cannot read. So the shipped 256px icon is copied
+ * into the profile once and the copy is what gets pointed at.
+ */
+function shellIdentityFile(): string {
+  return path.join(app.getPath('userData'), 'app-icon.png');
+}
+
+async function registerShellIdentity(): Promise<void> {
+  const key = `HKCU\\Software\\Classes\\AppUserModelId\\${APP_USER_MODEL_ID}`;
+  const icon = shellIdentityFile();
+  try {
+    const source = path.join(app.getAppPath(), 'public', 'brand', 'icon.png');
+    const wanted = await fs.promises.readFile(source);
+    const current = await fs.promises.readFile(icon).catch(() => null);
+    if (!current || current.length !== wanted.length) {
+      await fs.promises.mkdir(path.dirname(icon), { recursive: true });
+      await fs.promises.writeFile(icon, wanted);
+    }
+  } catch (e) {
+    console.warn('[shell-identity] no icon to register:', (e as Error).message);
+  }
+  const values: Array<[string, string]> = [
+    ['DisplayName', 'ChaosX'],
+    ['IconUri', icon],
+  ];
+  for (const [name, value] of values) {
+    await new Promise<void>((resolve) => {
+      execFile(
+        'reg.exe',
+        ['add', key, '/v', name, '/t', 'REG_SZ', '/d', value, '/f'],
+        { windowsHide: true, timeout: 5000 },
+        (err) => {
+          if (err) console.warn(`[shell-identity] ${name} not registered`);
+          resolve();
+        },
+      );
+    });
+  }
+}
+
+/* ── Stock wallpapers ────────────────────────────────────────────────────── */
+
+const STOCK_IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'jfif']);
+const STOCK_VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mov', 'mkv']);
+
+/**
+ * Where the shipped wallpapers live.
+ *
+ * `resources/wallpapers` is an `extraResources` folder rather than part of `public`,
+ * which costs a line of path arithmetic here and buys three things: the directory
+ * is a real one the user can open in Explorer and drop files into, the renderer can
+ * reach it through the same `media://` stream any picked wallpaper uses, and the
+ * picker's contents are whatever is on disk — so adding a wallpaper is copying a
+ * file, not rebuilding the app.
+ */
+function stockWallpaperDir(): string {
+  return app.isPackaged
+    ? path.join(path.dirname(app.getPath('exe')), 'resources', 'wallpapers')
+    : path.join(app.getAppPath(), 'resources', 'wallpapers');
+}
+
+ipcMain.handle('wallpaper:stock', () => {
+  const dir = stockWallpaperDir();
+  const items: { name: string; path: string; kind: 'image' | 'video' }[] = [];
+  try {
+    for (const file of fs.readdirSync(dir)) {
+      const ext = path.extname(file).slice(1).toLowerCase();
+      const kind = STOCK_IMAGE_EXT.has(ext) ? 'image' : STOCK_VIDEO_EXT.has(ext) ? 'video' : null;
+      if (!kind) continue;
+      items.push({
+        name: path.basename(file, path.extname(file)).replace(/[_-]+/g, ' ').trim(),
+        path: path.join(dir, file),
+        kind,
+      });
+    }
+  } catch {
+    // No folder on disk is simply no stock set, which the picker reads as an empty list.
+  }
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  return { dir, items };
+});
+
+ipcMain.handle('wallpaper:stock:open', async () => {
+  const dir = stockWallpaperDir();
+  if (!fs.existsSync(dir)) return false;
+  await shell.openPath(dir);
+  return true;
+});
+
+/* ── Taskbar pin ─────────────────────────────────────────────────────────── */
+
+/**
+ * The shell's own pinned-items folder.
+ *
+ * The supported way to be pinned is `TaskbarManager.RequestPinCurrentAppAsync`, in
+ * `taskbar-pin.ts`, which asks the user through Windows and takes effect the second
+ * they say yes. This folder is what is left for the machines where that API is not
+ * offered to a desktop app — Windows 10, and any build that answers E_NOINTERFACE to
+ * the desktop-support marker.
+ *
+ * It is a fallback and not an equal: Windows 11 keeps its real pin list in a
+ * serialized blob under `HKCU\...\Explorer\Taskband`, so a shortcut written here can
+ * sit unread for the life of the profile. `SHChangeNotify` and `ie4uinit -show` are
+ * the nudges that make some builds look again, which is why they are still called.
+ */
+function pinnedTaskbarLink(): string {
+  return path.join(
+    app.getPath('appData'),
+    'Microsoft',
+    'Internet Explorer',
+    'Quick Launch',
+    'User Pinned',
+    'TaskBar',
+    'ChaosX.lnk',
+  );
+}
+
+/*
+ * Tell Explorer the file it is showing as a taskbar button has changed.
+ *
+ * `ie4uinit -show` re-reads icons; it does not re-read the pin list, which is why
+ * a shortcut written here could sit in the folder for a whole session without
+ * ever appearing. `SHChangeNotify` with a path is the message the shell actually
+ * listens for.
+ *
+ * The wide string is passed as a UTF-16 buffer rather than relying on koffi
+ * marshalling a `wchar_t*` from a JS string, because the call is void and a wrong
+ * signature would fail silently — which is the exact failure being fixed.
+ */
+const SHCNE_CREATE = 0x00000002;
+const SHCNE_DELETE = 0x00000004;
+const SHCNE_UPDATEITEM = 0x00002000;
+const SHCNF_PATHW = 0x0005;
+
+let shellNotify: ((event: number, target: string) => void) | null = null;
+let triedNotify = false;
+
+function loadShellNotify(): void {
+  if (triedNotify) return;
+  triedNotify = true;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const koffi = require('koffi');
+    const shell32 = koffi.load('shell32.dll');
+    const fn = shell32.func('void __stdcall SHChangeNotify(int32, uint32, void*, void*)');
+    shellNotify = (event, target) => {
+      fn(event, SHCNF_PATHW, Buffer.from(`${target}\0`, 'utf16le'), null);
+    };
+  } catch {
+    shellNotify = null;
+  }
+}
+
+function notifyShell(event: number, target: string): void {
+  loadShellNotify();
+  try {
+    shellNotify?.(event, target);
+  } catch {
+    // A shell that refuses the nudge costs the immediate update, not the pin.
+  }
+}
+
+function refreshTaskbar(): void {
+  execFile('ie4uinit.exe', ['-show'], () => undefined);
+}
+
+ipcMain.handle('taskbar:is-pinned', async () => {
+  const state = await taskbarPinState();
+  if (state.pinned !== null) return state.pinned;
+  try {
+    return fs.existsSync(pinnedTaskbarLink());
+  } catch {
+    return false;
+  }
+});
+
+/*
+ * The shortcut folder, kept as the fallback it is.
+ *
+ * Windows 11 reads its pinned items from a serialized blob in the registry and not
+ * from this folder at all, so writing here changes nothing on the machine this app
+ * is built for — but it still works on Windows 10, and on any Windows 11 where the
+ * pinning API is not offered to a desktop app. It is also the only thing that can
+ * be *undone*, which is why removing the pin still goes through it.
+ */
+function writePinnedShortcut(): { ok: boolean; error?: string } {
+  try {
+    const link = pinnedTaskbarLink();
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    const dir = path.dirname(process.execPath);
+    const icon = path.join(dir, 'ChaosX.exe');
+    /*
+     * `create`, not `replace`.
+     *
+     * Electron documents the difference and it is the whole bug: `replace` and
+     * `update` both "fail if the shortcut does not exist", so the operation that
+     * pins an app for the first time is precisely the one that cannot work. It
+     * returned false on every machine, silently, and no ChaosX.lnk was ever
+     * written — which is why rebooting did not help either. `create` overwrites
+     * when there is something to overwrite and writes when there is not.
+     */
+    const ok = shell.writeShortcutLink(link, 'create', {
+      description: 'ChaosX — a liquid glass music player',
+      target: process.execPath,
+      cwd: dir,
+      appUserModelId: 'com.chaosx.player',
+      ...(fs.existsSync(icon) ? { icon, iconIndex: 0 } : {}),
+    });
+    if (!ok) return { ok: false, error: 'the shell refused the shortcut' };
+    notifyShell(SHCNE_CREATE, link);
+    notifyShell(SHCNE_UPDATEITEM, path.dirname(link));
+    refreshTaskbar();
+    return { ok: fs.existsSync(link) };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+ipcMain.handle('taskbar:set-pinned', async (_event, on: boolean) => {
+  if (process.platform !== 'win32') return { ok: false, error: 'not windows' };
+  /*
+   * Dev refuses rather than pretending. Under `npm run dev` `process.execPath` is
+   * `electron.exe`, so honouring this would pin a shortcut named ChaosX that opens
+   * whatever Electron build happens to be installed — a broken icon sitting on the
+   * developer's own taskbar, left behind by a test run.
+   */
+  if (!app.isPackaged) return { ok: false, error: 'dev build' };
+
+  if (on) {
+    /*
+     * The shell checks that the requesting app is the one in the foreground, and
+     * denies without saying so. A request from a window that has lost focus — to a
+     * screensaver, a game, another monitor's app — comes back "no" and reads like a
+     * broken feature, so the window is pulled forward first. This is the one moment
+     * in the app where taking focus unasked is the right thing: the user just asked
+     * to be pinned, and the prompt that follows is Windows' own.
+     */
+    app.focus({ steal: true });
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.focus();
+
+    const asked = await requestTaskbarPin();
+    if (asked.outcome === 'pinned') return { ok: true };
+    /*
+     * A dialog the user answered no is an answer, not a failure, and writing a
+     * shortcut after it would put back the pin they just refused. Every other
+     * nothing-happened case falls through to the folder, which is the only route a
+     * build without the API has.
+     */
+    if (asked.outcome === 'declined') return { ok: false, error: asked.error };
+    const written = writePinnedShortcut();
+    if (!written.ok) return { ok: false, error: asked.error ?? written.error ?? 'no pin was added' };
+    return {
+      ok: false,
+      error:
+        (asked.error ? asked.error + ' — ' : '') +
+        'a shortcut was left in the shell\'s pinned items instead, which some builds only read at the next sign-in',
+    };
+  }
+
+  try {
+    if (fs.existsSync(pinnedTaskbarLink())) fs.unlinkSync(pinnedTaskbarLink());
+    notifyShell(SHCNE_DELETE, pinnedTaskbarLink());
+    refreshTaskbar();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+  /*
+   * Windows gives an app no way to remove a pin it was granted, so the only honest
+   * answer after deleting the shortcut is to ask the bar what it says now. If the
+   * button is still there the user took the pin by some route the app cannot undo,
+   * and the row has to say so instead of clicking itself off.
+   */
+  const state = await taskbarPinState();
+  if (state.pinned) {
+    return {
+      ok: false,
+      error:
+        'Windows does not let an app remove its own taskbar pin — right-click the ChaosX button and choose Unpin from taskbar',
+    };
+  }
+  return { ok: true };
+});
 
 /*
  * One instance, full stop.
@@ -3189,7 +3840,46 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
   if (!holdsInstanceLock) return;
+  /*
+   * The profile has to be in place before the window reads it.
+   *
+   * The boot screen used to go up here as its own window, ahead of `createWindow()`.
+   * It is now the first thing the page paints — see `#boot-splash` in index.html —
+   * which covers the same gap from the very first frame without a top-most window
+   * sitting on the desktop: the old one held the foreground for the whole boot, so
+   * nothing else could be clicked, and because it skipped the taskbar the hover
+   * thumbnail showed the half-loaded library behind it rather than the splash.
+   */
   migrateLegacyUserData();
+  /*
+   * Who the shell is allowed to say this app is.
+   *
+   * Done before the window exists because the media tile can appear the moment a
+   * song does, and an unregistered id answers it with "Unknown app".
+   */
+  if (app.isPackaged) void registerShellIdentity();
+  /*
+   * This process and everything it spawns get a high priority class.
+   *
+   * The symptom was audio: closing the window to the tray could stall the song for a
+   * second or two, and it happened on a loaded machine, which is the tell for
+   * scheduling rather than for the player. On two cores the decoder thread competes
+   * with the indexer, the browser's own processes and whatever else woke up, and the
+   * one thing that must not run out of CPU is a stream that has to deliver 40 ms of
+   * audio every 40 ms.
+   *
+   * HIGH rather than REALTIME deliberately: a realtime-class process that keeps a
+   * core busy outranks the mouse, the disk and the window manager, so on the exact
+   * machines this app is built for it can freeze the desktop. Children inherit the
+   * class they are spawned under, which covers the renderers; the mpv decks are set
+   * again explicitly in `mpv-engine.ts` because Chromium re-derives its own children.
+   */
+  try {
+    os.setPriority(process.pid, os.constants.priority.PRIORITY_HIGH);
+  } catch {
+    // A shell that will not re-rank its own processes loses the boost, not the app.
+  }
+  if (app.isPackaged) void pruneLoginItemGhosts();
   // Battery, memory and processor for the Statistics page. Started here rather
   // than lazily so the first reading is already real when the page opens.
   registerSysInfo();
@@ -3282,6 +3972,90 @@ app.whenReady().then(() => {
     }
   };
 
+  /*
+   * A slice of a local file as a web body, without `Readable.toWeb`.
+   *
+   * Node's adapter closes the web controller on `end` and again on `close`, and an
+   * `fs` stream that a `<video>` or `<audio>` element abandons mid-range — which
+   * every seek does, and which a handoff between the library window and the pill
+   * does by construction — emits the second one after the first. The resulting
+   * `ERR_INVALID_STATE: Controller is already closed` is thrown off a process
+   * tick, so nothing in this file can catch it and Electron answers with a modal
+   * "A JavaScript error occurred in the main process" over the whole desktop.
+   * That dialog was appearing on both laptops, and it is what looked like the app
+   * crashing when the pill was open and the takeover was called.
+   *
+   * Owning the stream costs twenty-odd lines and removes the class of bug: one
+   * `settled` flag, and the close is attempted exactly once.
+   */
+  function fileBody(filePath: string, start: number, end: number): ReadableStream<Uint8Array> {
+    const stream = fs.createReadStream(filePath, { start, end });
+    const chunks: Uint8Array[] = [];
+    let failure: unknown = null;
+    let done = false;
+    let wake: (() => void) | null = null;
+    const settle = (err?: unknown) => {
+      if (done) return;
+      if (err !== undefined) failure = err;
+      done = true;
+      const w = wake;
+      wake = null;
+      w?.();
+    };
+    stream.on('data', (chunk: string | Buffer) => {
+      const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      chunks.push(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+      /*
+       * One chunk per pull. Without the pause this buffers a whole 25 MB film into
+       * the main process's heap while the consumer is still deciding, which is the
+       * opposite of what a range stream is for.
+       */
+      stream.pause();
+      const w = wake;
+      wake = null;
+      w?.();
+    });
+    stream.on('end', () => settle());
+    stream.on('error', (e) => settle(e));
+    stream.on('close', () => settle());
+
+    return new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          for (;;) {
+            const chunk = chunks.shift();
+            if (chunk) {
+              controller.enqueue(chunk);
+              stream.resume();
+              if (!chunks.length) return;
+              continue;
+            }
+            if (failure) {
+              const e = failure;
+              failure = null;
+              controller.error(e);
+              return;
+            }
+            if (done) {
+              controller.close();
+              return;
+            }
+            await new Promise<void>((r) => { wake = r; });
+          }
+        } catch {
+          /*
+           * The reader is gone — the element was unmounted, the request was
+           * aborted. There is nobody left to hand an error to, and throwing on
+           * this tick is exactly the failure being designed out.
+           */
+        }
+      },
+      cancel() {
+        stream.destroy();
+      },
+    });
+  }
+
   // Streams local files with proper HTTP range support so <video>/<audio>
   // can seek instantly instead of waiting for a full download.
   protocol.handle('media', async (request) => {
@@ -3310,8 +4084,8 @@ app.whenReady().then(() => {
       if (status === 206) {
         headers.set('Content-Range', `bytes ${start}-${end}/${total}`);
       }
-      const stream = fs.createReadStream(filePath, { start, end });
-      return new Response(Readable.toWeb(stream) as unknown as ReadableStream, { status, headers });
+      const stream = fileBody(filePath, start, end);
+      return new Response(stream, { status, headers });
     };
 
     const rangeHeader = request.headers.get('range');
@@ -3407,6 +4181,7 @@ app.on('before-quit', () => {
 });
 
 app.on('will-quit', () => {
+  writeLibraryDraftSync();
   globalShortcut.unregisterAll();
   if (tray) {
     tray.destroy();

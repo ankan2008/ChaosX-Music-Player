@@ -177,6 +177,50 @@ const BackdropLayer: React.FC = () => {
   const background = usePlayerStore((s) => s.background);
   const wallpaperPath = usePlayerStore((s) => s.wallpaperPath);
   const wallpaperKind = usePlayerStore((s) => s.wallpaperKind);
+  /*
+   * A live wallpaper holds still the moment nothing can see it.
+   *
+   * Decoding a clip is the most expensive thing this app does when it is idle, and
+   * it buys nothing while the window is behind another app, parked in the tray, or
+   * covered by the takeover — where the film or the record *is* the picture. Every
+   * live-wallpaper app on Windows behaves this way, and the reason it matters here
+   * is the machine: on a two-core laptop the frames that go to an unseen wallpaper
+   * are frames the interface does not get when it comes back.
+   *
+   * Three signals, because each misses a case the others catch. `visibilitychange`
+   * covers hide-to-tray and minimise, `focus`/`blur` covers a click over to another
+   * app on a window that is still visible, and the two store flags cover the
+   * takeovers, which keep the window focused and visible while they cover the
+   * backdrop with something else entirely.
+   */
+  const nowPlayingFull = usePlayerStore((s) => s.nowPlayingFull);
+  const videoFullscreen = usePlayerStore((s) => s.videoFullscreen);
+  /*
+   * Seeded from visibility only, and deliberately not from `hasFocus()`.
+   *
+   * A renderer that has not been shown yet answers `hasFocus()` false, and a
+   * wallpaper that starts parked and waits for a `focus` event that never comes —
+   * because the window was focused all along — is a live wallpaper that looks like a
+   * still. The events are the authority; the initial value only has to avoid
+   * painting a loop into a window that is not on screen.
+   */
+  const [unseen, setUnseen] = useState(() => document.visibilityState !== 'visible');
+  useEffect(() => {
+    const read = () =>
+      setUnseen(document.visibilityState !== 'visible' || !document.hasFocus());
+    window.addEventListener('focus', read);
+    window.addEventListener('blur', read);
+    document.addEventListener('visibilitychange', read);
+    return () => {
+      window.removeEventListener('focus', read);
+      window.removeEventListener('blur', read);
+      document.removeEventListener('visibilitychange', read);
+    };
+  }, []);
+  const held = unseen || nowPlayingFull || videoFullscreen;
+  /** Read by the paint loop's watchdog, which must not undo the hold. */
+  const heldRef = useRef(held);
+  heldRef.current = held;
 
   const artBackdrop = background === 'art';
   const trackId = usePlayerStore((s) => s.currentTrack?.id ?? null);
@@ -360,6 +404,24 @@ const BackdropLayer: React.FC = () => {
       video.loop = true;
       video.muted = true;
       video.playsInline = true;
+      /*
+       * On the page, and invisible on it.
+       *
+       * An element that is in no document is never displayed, and Chromium treats a
+       * video nobody displays as something to give back: after roughly a minute the
+       * pipeline goes idle — `networkState` returns to NETWORK_IDLE, the media clock
+       * stops, and `paused` stays false throughout, so the element reports itself as
+       * playing while it holds one frame forever. That is the "the live wallpaper
+       * froze" report, and no amount of `play()` retrying fixes it, because as far
+       * as the element is concerned nothing is wrong.
+       *
+       * Measured side by side, being attached costs the decode nothing: 28 frames a
+       * second either way. It hangs off `body` rather than the app root so the glass
+       * engine, which scans its own subtree for live media, does not gain a new
+       * source to bend.
+       */
+      video.className = 'wallpaper-decode';
+      document.body.appendChild(video);
       void video.play().catch(() => undefined);
       setWall({ kind: 'video', el: video });
     } else {
@@ -389,9 +451,23 @@ const BackdropLayer: React.FC = () => {
         video.pause();
         video.removeAttribute('src');
         video.load();
+        video.remove();
       }
     };
   }, [useWallpaper, wallpaperPath, wallpaperKind]);
+
+  /*
+   * The hold itself: pause on the way out, resume on the frame the window comes
+   * back. `play()` is issued even when the element already thinks it is playing,
+   * because an element Chromium throttled and one we paused look identical from
+   * here, and only one of them restarts itself.
+   */
+  useEffect(() => {
+    if (wall?.kind !== 'video') return;
+    const el = wall.el;
+    if (held) el.pause();
+    else void el.play().catch(() => undefined);
+  }, [held, wall]);
 
   useEffect(() => {
     if (!active) return;
@@ -472,8 +548,29 @@ const BackdropLayer: React.FC = () => {
       const bleed = radius > 0.01
         ? Math.round(Math.max(2, (radius * tw) / w) * BLEED)
         : 0;
-      const bw = tw + bleed * 2;
-      const bh = th + bleed * 2;
+      /*
+       * A film is baked small and blown back up on the composite.
+       *
+       * The buffer used to be window-sized whatever was playing, so every decoded
+       * frame cost a full-viewport `fillRect`, a full-viewport `drawImage` and a
+       * gaussian `filter` over all of it — and that is the number that decided how
+       * often the wallpaper could move. Measured against the display it lands well
+       * under thirty on a two-core machine, which is the complaint.
+       *
+       * Cutting the buffer's long edge to 560 px makes the blur roughly six times
+       * cheaper per frame, and the thing that is lost is invisible by construction:
+       * the whole point of this pass is that the picture has been smeared by tens of
+       * pixels before anyone looks at it. A still keeps the full-resolution buffer,
+       * because a still is baked once and its sharpness is the one thing the user can
+       * actually read.
+       *
+       * This is the deal the app already states on the card — a video wallpaper costs
+       * more on a low-end PC — and the user has asked for the visuals not to be the
+       * thing that pays for it.
+       */
+      const bakeScale = video ? Math.min(1, 560 / Math.max(1, tw + bleed * 2, th + bleed * 2)) : 1;
+      const bw = Math.max(8, Math.round((tw + bleed * 2) * bakeScale));
+      const bh = Math.max(8, Math.round((th + bleed * 2) * bakeScale));
       if (bake.cur.width !== bw || bake.cur.height !== bh) {
         bake.cur.width = bw;
         bake.cur.height = bh;
@@ -514,7 +611,7 @@ const BackdropLayer: React.FC = () => {
       const parts: string[] = [];
       // `bw / (w + 2*outX)` reduces to `tw / w`, so this is the radius the buffer
       // needs whatever bleed is currently in force.
-      if (radius > 0.2) parts.push(`blur(${((radius * tw) / w).toFixed(2)}px)`);
+      if (radius > 0.2) parts.push(`blur(${(((radius * tw) / w) * bakeScale).toFixed(2)}px)`);
       /*
        * The colour-depth slider stays a CSS `saturate` rather than becoming a
        * filter chain of its own, because the picture is the user's own wallpaper or
@@ -685,27 +782,80 @@ const BackdropLayer: React.FC = () => {
       raf = requestAnimationFrame(paint);
     };
 
-    const loop = () => {
-      if (disposed || !video) return;
-      /*
-       * A display frame that carries no new decoded frame still costs a buffer
-       * fill and a full-window upscale, and on a two-core machine that is the
-       * difference between the film and the interface competing for the same
-       * pair of threads. Skipping it is not a quality loss — the pixels on the
-       * canvas are already the ones the decoder last produced.
-       */
-      if (video.currentTime !== lastFrame) {
-        lastFrame = video.currentTime;
+    /*
+     * A film is presented one decoded frame at a time, and the only honest way to
+     * follow it is to be told when one arrives.
+     *
+     * The rAF poll this replaces asked "did `currentTime` move" sixty times a
+     * second. Against a 30 fps clip that is correct half the time and wasteful the
+     * other half, and against a clip whose decoder is losing frames to the same two
+     * cores it shares with the interface, the timestamp can sit still for several
+     * frames and then jump — which reads as the wallpaper running at a fraction of
+     * its own rate. `requestVideoFrameCallback` fires exactly once per presented
+     * frame, so the backdrop moves as fast as the file does and never paints the
+     * same frame twice.
+     */
+    type FrameCallback = (now: number, meta: { mediaTime: number; presentedFrames: number }) => void;
+    const src = video as (HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: FrameCallback) => number;
+    }) | null;
+    const rvfc = src?.requestVideoFrameCallback?.bind(src);
+
+    if (rvfc) {
+      const onFrame = () => {
+        if (disposed) return;
         paint();
-      }
-      raf = requestAnimationFrame(loop);
+        rvfc(onFrame);
+      };
+      rvfc(onFrame);
+    } else {
+      const loop = () => {
+        if (disposed || !video) return;
+        if (video.currentTime !== lastFrame) {
+          lastFrame = video.currentTime;
+          paint();
+        }
+        raf = requestAnimationFrame(loop);
+      };
+      loop();
+    }
+
+    /*
+     * It plays until it is told not to.
+     *
+     * `loop` should make `ended` unreachable, and a paused element is otherwise
+     * silent — the wallpaper just stops and looks like a still. Both are watched
+     * because the user's instruction was that a live wallpaper keeps going until the
+     * wallpaper changes or the mode moves to album art, and the only acceptable
+     * reason for one to stop is that it was replaced.
+     *
+     * The hold is the one reason that is now allowed, and it has to be checked here
+     * in three places — the pause event, the two-second watchdog and the visibility
+     * handler — because a watchdog that restarts what the app just parked turns the
+     * feature into a two-second stutter instead of a pause.
+     */
+    const keepPlaying = () => {
+      if (heldRef.current) return;
+      if (!disposed && video && video.paused) void video.play().catch(() => undefined);
     };
+    const onWatch = () => {
+      if (document.visibilityState === 'visible') keepPlaying();
+    };
+    video?.addEventListener('ended', keepPlaying);
+    video?.addEventListener('pause', keepPlaying);
+    document.addEventListener('visibilitychange', onWatch);
+    const watchdog = window.setInterval(keepPlaying, 2000);
 
     const onResize = () => schedule();
     window.addEventListener('resize', onResize);
 
-    if (video) loop();
-    else {
+    /*
+     * A still has no frames to follow, so it paints once and then only when
+     * something asks — a resize, a slider, a new picture. The video paths above own
+     * the loop when there is one, and taking the handle here would leave the still
+     * never drawn at all.
+     */
+    if (!video) {
       repaintRef.current = schedule;
       schedule();
     }
@@ -714,6 +864,10 @@ const BackdropLayer: React.FC = () => {
       disposed = true;
       cancelAnimationFrame(raf);
       raf = 0;
+      window.clearInterval(watchdog);
+      video?.removeEventListener('ended', keepPlaying);
+      video?.removeEventListener('pause', keepPlaying);
+      document.removeEventListener('visibilitychange', onWatch);
       repaintRef.current = null;
       window.removeEventListener('resize', onResize);
     };

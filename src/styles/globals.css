@@ -870,21 +870,6 @@ select option {
 }
 
 /*
- * The read-all switch's label, as an element rather than as loose text.
- *
- * A bare text node in a flex row becomes an anonymous item, and an anonymous item
- * cannot be given `min-width: 0` — so its floor is its min-content width and it is
- * laid out at max-content before shrinking, which is how "All At Once" ended up
- * standing 6px outside its own pill. Named, it can be told to take whatever the
- * icon leaves and break inside that.
- */
-.lyrics-flat-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-wrap: break-word;
-}
-
-/*
  * Six controls, one grid, no heading above them.
  *
  * The card already says what it holds by holding it. What used to sit over the
@@ -10297,4 +10282,535 @@ button.credits-row:hover {
   .setup-tiles-two {
     grid-template-columns: 1fr;
   }
+}
+
+/* ============================================================
+   Round 12 — a thinner titlebar, and the 1366x768 panel
+   ============================================================
+ *
+ * Everything in this block answers one measurement: the app was laid out against a
+ * 1440x900 window and checked on a 1536x864 one, and the second machine in the
+ * family is a 1366x768 Inspiron at 125% scaling, which hands the page about
+ * 580 CSS pixels of height. The quote card was clipped, the pomodoro hung off the
+ * bottom of the sidebar, the lyrics buttons folded into circles, and the ranked
+ * pairs painted past the glass they stand on. The titlebar was also 50px of glass
+ * around a 38px capsule — ten pixels the page could have back.
+ *
+ * Appended at the end of the file on purpose. This stylesheet has grown several
+ * rules for the same selector, where the later one wins, and a value edited in
+ * place at line 390 can be quietly overridden at line 9600.
+ */
+
+/* ── The title strip: 50px of glass becomes 36px, and the controls move up ── */
+
+.app-shell {
+  padding: 4px 12px 0;
+  gap: 10px;
+}
+
+.win-drag {
+  height: 36px;
+  margin: -4px -12px 0;
+  padding: 4px 12px 0;
+  align-items: flex-start;
+  border-radius: 0 0 14px 14px;
+}
+
+.win-controls {
+  height: 28px;
+  padding: 0 3px;
+}
+
+.win-controls .win-btn {
+  width: 40px;
+  height: 24px;
+}
+
+.win-title {
+  height: 24px;
+  padding: 0 11px;
+  min-width: 196px;
+  font-size: 0.7rem;
+}
+
+/* ── The page moves up into the room that just came free, and grows down ── */
+
+.app-main {
+  padding: 10px 12px;
+  /*
+   * 132 was measured as the pill's 92px plus its 10px of floor plus the ~13px each
+   * of painted glass that swells past its own box at both ends. 120 keeps that
+   * clearance and hands the page the twelve pixels back, which is what the cards at
+   * the foot of a list were missing.
+   */
+  margin-bottom: 120px;
+}
+
+/* ── Home: the plate is the scroll root, so nothing can paint past it ── */
+
+.home-page {
+  overflow-y: auto;
+  gap: 14px;
+  padding: 2px 12px 14px;
+}
+
+.home-list-card {
+  padding: 12px 20px 14px;
+}
+
+/* ── The now-playing card gives height back to the lyric sheet ── */
+
+.now-playing {
+  padding: 12px;
+  gap: 14px;
+}
+
+.art-tile {
+  width: 132px;
+  height: 132px;
+  border-radius: 26px;
+}
+
+@media (max-width: 1200px) {
+  .art-tile {
+    width: 104px;
+    height: 104px;
+  }
+}
+
+.lyrics-panel {
+  min-height: 190px;
+}
+
+/*
+ * The six controls fold to as many columns as the card can hold at 88px each, which
+ * is the narrowest pill that still carries a two-word label on one line.
+ *
+ * `repeat(6, minmax(0, 1fr))` had no floor, so in a 300px card every column came out
+ * 43px wide, the label broke onto a third line, and the button grew taller than it
+ * was wide — a `border-radius: 999px` on a box like that is a circle, which is the
+ * "the lyrics buttons went round on the other laptop" report. A floor in the track
+ * definition makes the grid add a row instead of stealing width, and the same rule
+ * then needs no breakpoint at all.
+ */
+.lyrics-actions {
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+}
+
+.lyrics-import {
+  min-height: 30px;
+}
+
+/* ── The sidebar's stack, scaled to a short window ── */
+
+@media (max-height: 800px) {
+  .user-block {
+    padding: 8px 12px 6px;
+    gap: 6px;
+  }
+
+  .sidebar-scroll > .liquid-glass-card.small {
+    padding: 8px 12px;
+  }
+
+  .sidebar-scroll > .quote-card {
+    margin: 6px 10px 4px;
+  }
+
+  .quote-card .quote-glass.liquid-glass-card {
+    padding: 8px 10px;
+  }
+
+  .clock-card {
+    margin: 4px auto 6px;
+    padding: 4px 12px 6px;
+  }
+
+  /*
+   * `zoom` rather than `transform: scale()`: a transform leaves the layout box the
+   * size it was, so a scaled hourglass would still push the card's own height by
+   * 120px and the shrink would buy nothing. `zoom` resizes the box as it resizes the
+   * pixels, which is the whole point here — the card gets shorter, not just smaller.
+   */
+  .pomodoro-card {
+    padding: 8px 10px;
+    gap: 3px;
+    zoom: 0.94;
+  }
+}
+
+@media (max-height: 680px) {
+  .user-block {
+    padding: 6px 10px 4px;
+    gap: 4px;
+  }
+
+  .sidebar-scroll > .liquid-glass-card.small {
+    padding: 6px 10px;
+  }
+
+  .nav-card .sidebar-row {
+    padding: 3px 8px;
+  }
+
+  .quote-text {
+    line-height: 1.2;
+  }
+
+  .pomodoro-card {
+    zoom: 0.84;
+  }
+}
+
+/*
+ * The escape hatch, and the one rule here that admits a layout can lose.
+ *
+ * `.sidebar-scroll` is `overflow-y: hidden` because every glass surface carries a
+ * shadow canvas twenty pixels past its own box, so the scroller always had something
+ * to scroll to and drew a bar over empty space. Below 620px of height the stack can
+ * genuinely outgrow the column even with the numbers above, and a clipped pomodoro is
+ * worse than a thin bar: the widgets are meant to all be visible.
+ */
+@media (max-height: 620px) {
+  .sidebar-scroll {
+    overflow-y: auto;
+  }
+}
+
+/* ── Stock wallpapers, and the folder they live in ── */
+
+.stock-wallpapers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  max-height: 196px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.stock-tile {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 11px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.12s ease;
+}
+
+.stock-tile:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.stock-tile:active {
+  transform: scale(0.97);
+}
+
+.stock-tile.is-active {
+  border-color: var(--accent, #e9cf9a);
+  box-shadow: 0 0 0 1px var(--accent, #e9cf9a);
+}
+
+.stock-tile img,
+.stock-tile video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stock-tile-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 6px;
+  font-size: 0.6rem;
+  text-align: left;
+  color: #fff;
+  background: linear-gradient(to top, rgba(8, 6, 9, 0.82), rgba(8, 6, 9, 0));
+}
+
+.stock-tile-flag {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(8, 6, 9, 0.6);
+}
+
+.stock-note {
+  margin-top: 8px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.stock-note-path {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: var(--art-text);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.stock-note-path:hover {
+  color: var(--glass-text);
+}
+
+/* ── Setup: the two Windows questions ── */
+
+.setup-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setup-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  text-align: left;
+}
+
+.setup-check input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--accent, #e9cf9a);
+  cursor: pointer;
+}
+
+.setup-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setup-check-text strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--glass-text);
+}
+
+.setup-check-text span {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--glass-text-muted);
+}
+
+/* ===========================================================================
+   ROUND 13 — the title bar's two plates, and the stock wallpaper grid
+   =========================================================================== */
+
+/*
+ * The caption band is no longer a glass surface.
+ *
+ * It used to be one strip of frost across the entire width, which put a lit edge
+ * above every page and read as a second titlebar pasted over an app that had gone
+ * to some trouble not to have one. The band keeps its geometry and, more
+ * importantly, its `-webkit-app-region: drag` — so the window still moves from
+ * anywhere along the top and still maximises on a double-click — but it paints
+ * nothing. What you see of it now is two plates: the wordmark's and the buttons'.
+ */
+.win-drag {
+  background: none;
+  border-radius: 0;
+}
+
+/*
+ * Each of the two plates is now its own glass panel, which means each has to look
+ * like an object rather than a highlight: a rim light along the top edge and a
+ * shadow under it are what make a small refracting plate read as sitting above the
+ * wallpaper instead of being a smudge on it. The fill stays almost clear because
+ * the shader is doing the work underneath.
+ */
+.win-title,
+.win-controls {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/*
+ * The wordmark's plate is now the only thing defining its width, so it can no
+ * longer afford a `min-width` that was chosen when the strip behind it was full
+ * width anyway: a fixed floor put forty pixels of empty glass to the right of
+ * "by Ankan" and made the narrowest plate on screen look deliberate.
+ */
+.win-title {
+  min-width: 0;
+  width: fit-content;
+  height: 26px;
+  padding: 0 12px;
+}
+
+.win-controls {
+  height: 28px;
+}
+
+/* ── The stock wallpaper grid, which was laying its rows over each other ── */
+
+/*
+ * Measured before the fix, at this width: tiles 100×63, rows 56 apart. Every row
+ * was therefore standing 7px on top of the one below it, which is the collision in
+ * the screenshot — and it got worse the wider the window was, because the tiles
+ * grew and the rows did not.
+ *
+ * The cause is that `aspect-ratio` does not contribute to a grid track's intrinsic
+ * size when the track is `auto` and the item's cross-size is indefinite: Chromium
+ * sizes the row from the tile's *content*, and every child of a tile is absolutely
+ * positioned, so the content is nearly nothing. The item then resolves its height
+ * from the ratio and hangs out of the track it was measured against.
+ *
+ * So the rows are given a definite height and the ratio is dropped. A thumbnail
+ * strip is the one place where a fixed row costs nothing — the pictures are
+ * `object-fit: cover` either way — and the only thing it buys is that the grid can
+ * no longer disagree with itself.
+ */
+.stock-wallpapers {
+  grid-auto-rows: 62px;
+  align-items: stretch;
+  max-height: 214px;
+  gap: 9px;
+}
+
+.stock-tile {
+  aspect-ratio: auto;
+  height: 100%;
+  min-height: 0;
+}
+
+.settings-hint-warn {
+  margin-top: 6px;
+  color: #ffb3a7;
+}
+
+/* ROUND 14 — the live wallpaper's decode surface */
+/*
+ * The `<video>` a live wallpaper is read from has to be in the document or
+ * Chromium reclaims its pipeline after about a minute, which shows up as the
+ * wallpaper holding one frame while the element still claims to be playing. It is
+ * kept at the bottom of the stacking order and fully transparent so the backdrop
+ * canvas is the only version of it anyone ever sees.
+ */
+.wallpaper-decode {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 120px;
+  height: 68px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/*
+ * The rename affordances beside the greeting. They mirror the avatar's badges:
+ * invisible until the row is hovered, so the lockup reads as a picture and a
+ * name and only offers its edits to someone who is looking at it.
+ */
+.greeting-edit {
+  display: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+}
+
+.user-greeting:hover .greeting-edit {
+  display: grid;
+}
+
+.greeting-edit:hover {
+  background: rgba(255, 255, 255, 0.26);
+  color: #fff;
+}
+
+.greeting-input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 7px;
+  padding: 1px 6px;
+  outline: none;
+}
+
+/* ============================================================
+   ROUND 15 — the lyrics strip is seven glyphs in one row
+   ============================================================ */
+
+/*
+ * One row, both modes.
+ *
+ * The library's card laid six labelled pills across six grid tracks and the
+ * takeover view broke the same six into three by two, because that is what fitting
+ * six strings into a narrow panel takes. With the words gone the reason for the
+ * grid is gone with them: a flex row of fixed squares is the same seven buttons in
+ * either mode, in the same order, and it cannot wrap into a shape the user did not
+ * ask for.
+ *
+ * Appended rather than edited in place, so the grid rules above — including the
+ * narrow-window floor at `minmax(88px, 1fr)`, which was about label widths and is
+ * meaningless now — are simply no longer the last word.
+ */
+.lyrics-actions,
+.app-root.full-music .lyrics-actions,
+.lyrics-actions.is-brief {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+/*
+ * A squircle, not a circle. `border-radius: 999px` on a box that has just become
+ * square is a dot, and the glyph inside it reads as a full stop rather than as a
+ * control; 12px on 38px is the corner the rest of the app's small buttons use.
+ */
+.lyrics-import,
+.lyrics-actions.is-brief .lyrics-import {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12px;
+}
+
+/* Refresh is disabled while a search is in flight; it should look waiting, not broken. */
+.lyrics-import:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

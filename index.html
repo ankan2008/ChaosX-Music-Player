@@ -5,9 +5,221 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#121212" />
     <title>ChaosX Mark x1.0</title>
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <style>
+      /*
+       * The boot screen, painted by the page itself.
+       *
+       * ChaosX takes a second to become itself on a desktop and considerably longer
+       * on the laptop it is tuned for: the renderer boots, the pinned folders are
+       * walked, four hundred tracks are read, a song is picked for the queue, and the
+       * backdrop has to decode. Without cover the first thing every user saw was a
+       * half-empty interface saying "Nothing playing".
+       *
+       * This used to be a second, top-most window that went up before the real one.
+       * That worked, and it cost two things the app cannot afford: it held the
+       * foreground for the whole boot, so nothing else the user clicked could come
+       * forward, and because it skipped the taskbar the hover thumbnail showed the
+       * half-loaded library *behind* the splash rather than the splash itself.
+       *
+       * So it is markup in the document rather than a window of its own — the first
+       * pixels this page has ever composed, ahead of the bundle, which is the only
+       * way a boot screen can cover a boot. Nothing to focus, nothing on top of
+       * anything, and the taskbar preview is unavoidably a picture of what is
+       * actually on screen.
+       *
+       * Everything here is deliberately standalone: no bundler, no app CSS, no fonts
+       * to wait for. The rules are scoped to the node so the app's own stylesheet
+       * cannot reach them and they cannot reach the app's.
+       */
+      #boot-splash {
+        --bs-ink: rgba(255, 255, 255, 0.94);
+        --bs-dim: rgba(204, 200, 208, 0.62);
+        --bs-accent: #ff2d55;
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: #08070a;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        color: var(--bs-ink);
+        -webkit-user-select: none;
+        user-select: none;
+        /* The window is transparent and rounded by the compositor; a hard square
+           corner here would show desktop through it. */
+        border-radius: 10px;
+      }
+
+      #boot-splash .bs-scene {
+        position: absolute;
+        inset: -60px;
+        background: url('brand/wallpapers/train_upscaled.jpg') center / cover no-repeat;
+        /* The only blur in the app allowed to be a `filter` on a full-screen layer,
+           because the glass engine is not running yet and nothing scrolls under it. */
+        filter: blur(46px) saturate(1.15) brightness(0.42);
+        transform: scale(1.06);
+        animation: bs-drift 14s ease-in-out infinite alternate;
+      }
+
+      @keyframes bs-drift {
+        from {
+          transform: scale(1.06) translate3d(-1%, -0.6%, 0);
+        }
+        to {
+          transform: scale(1.12) translate3d(1%, 0.6%, 0);
+        }
+      }
+
+      #boot-splash .bs-veil {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          120% 90% at 50% 45%,
+          rgba(8, 7, 10, 0.12) 0%,
+          rgba(8, 7, 10, 0.66) 62%,
+          rgba(8, 7, 10, 0.9) 100%
+        );
+      }
+
+      #boot-splash .bs-stack {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        padding: 34px 46px 30px;
+        border-radius: 26px;
+        /* The app's cards are liquid glass and cannot be faked here — the shader
+           needs the engine. The same idea in the only material available before
+           boot: a translucent plate with a lit rim. */
+        background: rgba(255, 255, 255, 0.055);
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(26px) saturate(1.3);
+        -webkit-backdrop-filter: blur(26px) saturate(1.3);
+      }
+
+      #boot-splash .bs-mark {
+        width: 232px;
+        height: auto;
+        filter: drop-shadow(0 8px 26px rgba(0, 0, 0, 0.6));
+        animation: bs-rise 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      @keyframes bs-rise {
+        from {
+          opacity: 0;
+          transform: translateY(14px) scale(0.97);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      #boot-splash .bs-name {
+        font-size: 13px;
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        color: var(--bs-dim);
+        text-indent: 0.42em;
+        animation: bs-rise 900ms 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      #boot-splash .bs-bar {
+        position: relative;
+        width: 210px;
+        height: 3px;
+        border-radius: 3px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.1);
+        animation: bs-rise 900ms 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      /* An indeterminate sweep, not a fake percentage. A bar that lies about how far
+         through it is would be worse than one that admits it does not know. */
+      #boot-splash .bs-bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 42%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, transparent, var(--bs-accent), transparent);
+        animation: bs-sweep 1500ms cubic-bezier(0.5, 0, 0.5, 1) infinite;
+      }
+
+      @keyframes bs-sweep {
+        from {
+          transform: translateX(-110%);
+        }
+        to {
+          transform: translateX(340%);
+        }
+      }
+
+      /* What the app is actually doing, when that is more than a moment. Empty on a
+         machine that finishes before it is ever worth saying. */
+      #boot-splash .bs-status {
+        font-size: 11.5px;
+        letter-spacing: 0.06em;
+        color: var(--bs-dim);
+        min-height: 15px;
+        text-align: center;
+        animation: bs-rise 900ms 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      #boot-splash.bs-leaving {
+        animation: bs-out 320ms ease forwards;
+        /* The dissolve must not swallow a click on the interface arriving under it. */
+        pointer-events: none;
+      }
+
+      @keyframes bs-out {
+        to {
+          opacity: 0;
+          transform: scale(1.015);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash .bs-scene,
+        #boot-splash .bs-bar::after {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-splash" aria-live="polite">
+      <div class="bs-scene"></div>
+      <div class="bs-veil"></div>
+      <div class="bs-stack">
+        <img class="bs-mark" src="brand/wordmark.png" alt="ChaosX" />
+        <div class="bs-name">Mark x1.0</div>
+        <div class="bs-bar"></div>
+        <div class="bs-status"></div>
+      </div>
+    </div>
+    <script>
+      /*
+       * The pill and the mini card are the same bundle with `?view=` on the URL, and
+       * neither is a boot: they open onto a player that is already running, so a
+       * splash there would cover a working interface for no reason.
+       *
+       * This runs at parse time, in the body directly under the node, because the
+       * only moment it matters is the first frame. Deferred to `DOMContentLoaded` it
+       * would let a widget window paint a boot screen for a beat before the app
+       * arrived — which is the exact fault this whole file exists to remove.
+       */
+      (function () {
+        var view = new URLSearchParams(location.search).get('view');
+        if (view !== 'pill' && view !== 'mini') return;
+        var splash = document.getElementById('boot-splash');
+        if (splash) splash.remove();
+      })();
+    </script>
     <div id="root"></div>
     <div id="portal-root"></div>
     <script type="module" src="/src/main.tsx"></script>

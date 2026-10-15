@@ -31,6 +31,7 @@ import type { Readable } from 'node:stream';
 import * as net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { EventEmitter } from 'node:events';
 import {
   buildMpvAfChain,
@@ -161,6 +162,24 @@ class MpvDeck extends EventEmitter {
       '--input-ipc-server=' + this.pipe,
     ], { stdio: ['ignore', 'ignore', 'pipe'] }) as ChildProcessByStdio<null, null, Readable>;
     this.proc = proc;
+
+    /*
+     * The deck that is producing sound gets the same priority class the app put
+     * itself in, set explicitly rather than inherited.
+     *
+     * Chromium spawns its children with a priority of its own choosing and mpv is
+     * not a Chromium child, so the inheritance that covers the renderers stops at
+     * this `spawn`. Without it the decoder thread is an ordinary process competing
+     * with a library scan on two cores, which is the second-or-two of silence when
+     * the window is hidden to the tray.
+     */
+    if (proc.pid) {
+      try {
+        os.setPriority(proc.pid, os.constants.priority.PRIORITY_HIGH);
+      } catch {
+        // Losing the boost costs a stutter, not the track.
+      }
+    }
 
     proc.on('error', (e) => this.emit('error', e));
     proc.stderr.setEncoding('utf8');

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { getEngine } from '../../audio/engine';
 import MediaThumb from '../ui/MediaThumb';
@@ -111,12 +111,37 @@ const Card: React.FC<{
   );
 };
 
+/**
+ * How many ranked rows a window this short can actually carry.
+ *
+ * Six was chosen against a 900-pixel-tall window and never revisited, so on a
+ * 1366x768 panel the pair ran past the bottom of the glass card they stand in — the
+ * plate stops where the layout says it does and the rows keep going, which is what
+ * "the cards have spilled over their background" looks like. A row is 52px and the
+ * card around it costs about 64 more, and the page it sits on owes a heading, a hero
+ * and the transport pill before either number applies.
+ *
+ * Trimming the list is the right cut rather than shrinking the row: a ranked card is
+ * read top-down, and the fourth entry is the last one anybody was ever going to
+ * click from a window this size.
+ */
+function rankedRows(innerHeight: number, wanted: number): number {
+  return Math.max(2, Math.min(wanted, Math.floor((innerHeight - 340) / 52)));
+}
+
 const PlayCards: React.FC<{ limit?: number; stacked?: boolean }> = ({
   limit = 6,
   stacked = false,
 }) => {
   const ranked = useRanked();
   const [menu, setMenu] = useState<MenuRequest | null>(null);
+  const [rows, setRows] = useState(() => rankedRows(window.innerHeight, limit));
+
+  useEffect(() => {
+    const onResize = () => setRows(rankedRows(window.innerHeight, limit));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [limit]);
 
   const most = useMemo(
     () => [...ranked].sort((a, b) => b.count - a.count || b.lastPlayed - a.lastPlayed),
@@ -147,8 +172,8 @@ const PlayCards: React.FC<{ limit?: number; stacked?: boolean }> = ({
         </button>
       </div>
       <div className={`home-lists ${stacked ? 'stacked' : ''}`}>
-        <Card title="Most played" rows={most} limit={limit} onMenu={setMenu} />
-        <Card title="Last played" rows={last} limit={limit} onMenu={setMenu} />
+        <Card title="Most played" rows={most} limit={rows} onMenu={setMenu} />
+        <Card title="Last played" rows={last} limit={rows} onMenu={setMenu} />
       </div>
       {menu ? (
         <SongContextMenu

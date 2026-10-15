@@ -418,14 +418,24 @@ const VinylBackground: React.FC<VinylBackgroundProps> = ({
     };
     clear();
 
-    if (!trackId) {
-      resolvedForRef.current = null;
-      setHeldArt(null);
-      return;
-    }
+    /*
+     * A surface that was handed a picture wears it, whatever the store says about
+     * the track. The setup wizard is the case that proves the order matters: it asks
+     * for the wallpaper as the disc's face, and on a fresh install nothing is
+     * playing yet, so the old `no track, so nothing to hold` branch ran first and
+     * answered its own prop with `null`. The record then wore the plain dark sleeve
+     * through the whole first question and only appeared once a folder had been
+     * pinned and a song seeded — which is exactly what it looked like from the
+     * other laptop.
+     */
     if (art) {
       resolvedForRef.current = trackId;
       setHeldArt(art);
+      return;
+    }
+    if (!trackId) {
+      resolvedForRef.current = null;
+      setHeldArt(null);
       return;
     }
     if (resolvedForRef.current === trackId) return;
@@ -697,12 +707,26 @@ const VinylBackground: React.FC<VinylBackgroundProps> = ({
       if (!ctx) return;
       const r = DISC_PX / 2;
 
-      // Cover-crop the artwork to the full disc, not a small centre label.
-      // The brightness lift is deliberate: the disc is the app's backdrop, and
-      // a sleeve that was never meant to fill a screen reads as a dim wash once
-      // it does. 1.16 puts it back where the eye expects it after the grooves
-      // and the vignette have taken their share.
-      const s = Math.max(img.naturalWidth, img.naturalHeight);
+      /*
+       * Cover-crop the artwork to the full disc, not a small centre label.
+       *
+       * `min`, and the reason is a detail of `drawImage` that reads as a bug in the
+       * spin. A source rectangle that reaches outside the bitmap is not clamped —
+       * the part outside is painted transparent, at the same scale. Taking the
+       * *longer* edge as the side of the crop square therefore did not zoom into a
+       * landscape wallpaper at all: it asked for 2560×2560 out of a 2560×1440 file,
+       * so the artwork landed as a band across the middle of the disc with clear
+       * black above and below it, and once the circle clipped that band you could
+       * see the straight edges of the rectangle turning. That is the report this
+       * line exists to answer. The shorter edge is the largest square that actually
+       * fits inside the picture, which is what "cover" means.
+       *
+       * The brightness lift is deliberate: the disc is the app's backdrop, and a
+       * sleeve that was never meant to fill a screen reads as a dim wash once it
+       * does. 1.16 puts it back where the eye expects it after the grooves and the
+       * vignette have taken their share.
+       */
+      const s = Math.min(img.naturalWidth, img.naturalHeight);
       ctx.filter = 'brightness(1.16) saturate(1.08)';
       ctx.drawImage(
         img,

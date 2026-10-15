@@ -3,6 +3,7 @@ import { usePlayerStore } from './stores/playerStore';
 import { createGlassEngine, type GlassEngine } from './glass';
 import { setGlassEngine } from './glass/scene';
 import { mountDesktopBackdrop, prewarmCapture } from './glass/capture';
+import { dismissBootSplash, setBootStatus } from './utils/bootSplash';
 import { useBackdropImage } from './hooks/useBackdropImage';
 import Sidebar from './components/layout/Sidebar';
 import SetupWizard from './components/onboarding/SetupWizard';
@@ -61,6 +62,17 @@ import { usePlaybackPosition } from './hooks/usePlaybackPosition';
  * to stay at or under this.
  */
 const MODE_GLIDE_MS = 640;
+
+/**
+ * How long the boot screen may hold for, at the outside.
+ *
+ * A first run has to read every file in the library before it can show one, and on
+ * the machine this app is tuned for that is minutes rather than seconds. The ceiling
+ * is generous on purpose — the alternative is the interface arriving on top of a scan
+ * that is still running, which is the lag the user feels as the app itself — but it
+ * exists, because a boot that never reports in has to end somewhere the user can see.
+ */
+const BOOT_HOLD_CEILING_MS = 300000;
 
 /**
  * The gutter around the mini card; the window is the card plus this on all sides.
@@ -652,6 +664,26 @@ export default function App() {
   const folders = usePlayerStore((s) => s.folders);
   const wallpaperPath = usePlayerStore((s) => s.wallpaperPath);
   const isScanning = usePlayerStore((s) => s.isScanning);
+  /*
+   * The button acknowledges the scan for three seconds and then hands itself back.
+   *
+   * A walk over a few hundred files is long enough that turning the control into a
+   * spinner for its whole duration reads as an app that is busy with something it
+   * should not be busy with. Nothing about the scan needs that: it publishes rows as
+   * it goes, it is incremental, and starting another folder over a running scan is
+   * safe — `rescanFolder` rewrites only its own folder's slice of the library. So the
+   * label reports the press, and the walk carries on underneath.
+   */
+  const [scanAnnounced, setScanAnnounced] = useState(false);
+  useEffect(() => {
+    if (!isScanning) {
+      setScanAnnounced(false);
+      return;
+    }
+    setScanAnnounced(true);
+    const timer = window.setTimeout(() => setScanAnnounced(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [isScanning]);
   const mediaHasVideo = usePlayerStore((s) => s.mediaHasVideo);
   /** The film is drawn by this page's own `<video>`, so the glass can sample it. */
   const videoInPage = usePlayerStore((s) => s.videoInPage);
@@ -917,24 +949,74 @@ export default function App() {
   }, []);
 
   /*
-   * Tell the main process once this page has composed, so it can put the window on
-   * screen with something already in it.
+   * When the boot screen is allowed to come down.
    *
-   * `ready-to-show` fires on the first frame, which is before the layout below has
-   * settled a second time, and the window used to appear as a dark rectangle that
-   * then filled in. Two animation frames is the shortest honest wait: the second one
-   * is composited after the first has been measured and painted. The main process
-   * still shows the window on its own timer if this never arrives.
+   * The window is shown on its first composed frame, and that frame is the boot
+   * screen — see `#boot-splash` in `index.html`. What is left to decide is when the
+   * interface underneath it is worth uncovering: the pinned folders are still being
+   * walked, the queue has not been seeded, and the backdrop has not decoded, so the
+   * screen this reveals has to be the one with a track in it, not the one that says
+   * "Nothing playing" and fills in four seconds later.
+   *
+   * Three ways out, and the earliest one wins: everything is ready; there is
+   * nothing to be ready for, because no folder is pinned or the wizard is about to
+   * be the whole screen; or the ceiling below has passed, which is long enough for a
+   * first run to read every file it owns and short enough that a wedged boot still
+   * lands somewhere the user can see. While it is waiting on the scan it says so,
+   * because a two-core laptop takes minutes over four hundred tracks and a silent
+   * screen of that length reads as a hang rather than as work.
    */
   useEffect(() => {
-    if (IS_PILL_WINDOW || IS_MINI_WINDOW) return;
-    let raf = 0;
-    raf = requestAnimationFrame(() => {
-      raf = requestAnimationFrame(() => {
-        void window.electronAPI?.notifyReady?.();
-      });
-    });
-    return () => cancelAnimationFrame(raf);
+    if (IS_PILL_WINDOW || IS_MINI_WINDOW) return undefined;
+    const started = Date.now();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      dismissBootSplash();
+    };
+    const check = () => {
+      if (done) return;
+      const s = usePlayerStore.getState();
+      if (!s.onboarded || s.folders.length === 0) {
+        finish();
+        return;
+      }
+      /*
+       * The glass has to be up, not just the data.
+       *
+       * A queue and a track arrive out of the scan, and then the shader still has to
+       * boot, register every panel and composite its first frame — which is the part
+       * that takes longest on the Inspiron and the part the splash exists to cover.
+       * The engine injects one canvas per `[data-glass]` surface, so "every panel
+       * has a canvas under it" is a direct read of "the glasses are in place" rather
+       * than a wait of hopeful length.
+       */
+      const panels = document.querySelectorAll('[data-glass]');
+      const glazed = document.querySelectorAll('[data-glass] canvas');
+      const glassUp = panels.length > 0 && glazed.length >= Math.floor(panels.length * 0.9);
+      if (!s.isScanning && s.queue.length > 0 && s.currentTrack && glassUp) {
+        finish();
+        return;
+      }
+      /*
+       * A scan that found nothing has finished too.
+       *
+       * The queue is seeded out of the library, so an empty or unreadable folder
+       * leaves every condition above unsatisfiable forever — and a five-minute
+       * ceiling would then be the whole of the boot, on a machine that had already
+       * done everything it was going to do.
+       */
+      if (!s.isScanning && s.library.length === 0) {
+        finish();
+        return;
+      }
+      if (s.isScanning) setBootStatus(`Reading your library — ${s.scanProgress}%`);
+      if (Date.now() - started > BOOT_HOLD_CEILING_MS) finish();
+    };
+    check();
+    const id = window.setInterval(check, 250);
+    return () => window.clearInterval(id);
   }, []);
 
   // ── WebGL liquid glass on every glass surface ──────────────
@@ -1253,6 +1335,20 @@ export default function App() {
   }, [nowPlayingFull, videoFullscreen]);
 
   /*
+   * Hand the persisted close-to-tray back to the main process.
+   *
+   * The main process keeps its own `closeToTrayEnabled` mirror because the `close`
+   * event is synchronous and cannot await an IPC round trip to ask the renderer what
+   * the user chose. Until now the only write to that mirror was the Settings toggle,
+   * so every launch after the first started with it false and the X ended the app
+   * while the setting still read On.
+   */
+  useEffect(() => {
+    if (IS_OVERLAY_WINDOW) return;
+    void window.electronAPI?.setCloseToTray?.(usePlayerStore.getState().closeToTray);
+  }, []);
+
+  /*
    * Seed a playback queue so the transport has something to drive before the
    * user picks a row. In the list's own order, not scan order: the seeded queue
    * is what the next and previous buttons walk, and it disagreeing with the rows
@@ -1290,15 +1386,46 @@ export default function App() {
    * first play was paying the whole load cost on the press. Reverting this to
    * `false` is one argument and puts the memory back.
    */
+  /*
+   * And after the scan has settled — which used to be the whole of it, and was the
+   * bug on a machine that has not read these files before. A cold scan of four
+   * hundred tracks on a two-core laptop runs for minutes, and every one of them the
+   * pill said "Nothing playing", because the guard below refused to seed while
+   * `isScanning` was up. The first folder's rows are enough to be ready with; the
+   * queue is grown to the whole library when the scan lands, in the branch under
+   * this one, so the wait costs a short queue rather than a dead transport.
+   */
+  const seededRef = useRef<{ length: number; index: number } | null>(null);
   useEffect(() => {
-    if (IS_OVERLAY_WINDOW || isScanning || library.length === 0) return undefined;
+    if (IS_OVERLAY_WINDOW) return undefined;
     const id = window.setTimeout(() => {
       const s = usePlayerStore.getState();
-      if (s.queue.length > 0) return;
       const songs = audioOnly(s.library);
       if (!songs.length) return;
       const ordered = orderLibrary(songs, s.sortMode, buildFolderRank(s.folders, songs), s.sortDesc);
-      s.setQueue(ordered, Math.floor(Math.random() * ordered.length), true);
+      if (s.queue.length === 0) {
+        const at = Math.floor(Math.random() * ordered.length);
+        seededRef.current = { length: ordered.length, index: at };
+        s.setQueue(ordered, at, true);
+        return;
+      }
+      /*
+       * Grow the seeded queue once the rest of the library has arrived, and only
+       * while the queue is still exactly the one that was seeded. A row the user
+       * played, a queue they edited, or a song already sounding is a queue that
+       * belongs to them, and the ten-minute folder poll must never reach in and
+       * replace it — which is why this compares against what was written rather
+       * than trusting the length alone.
+       */
+      const was = seededRef.current;
+      if (isScanning || !was || s.isPlaying) return;
+      if (s.queue.length !== was.length || s.currentIndex !== was.index) return;
+      if (ordered.length === was.length) return;
+      const keep = s.currentTrack?.id ?? null;
+      const at = keep ? ordered.findIndex((t) => t.id === keep) : -1;
+      const next = at >= 0 ? at : s.currentIndex;
+      seededRef.current = { length: ordered.length, index: next };
+      s.setQueue(ordered, next, true);
     }, 700);
     return () => window.clearTimeout(id);
   }, [library, isScanning]);
@@ -1400,16 +1527,21 @@ export default function App() {
                * parent's drag region with `no-drag`, and the strip keeps dragging right up
                * to the buttons' edges.
                *
-               * It is a glass surface now, and that is a function rather than a flourish.
-               * The band is the only thing on screen that says "there is a titlebar here",
-               * which is what a window with no caption lost: without an edge to the strip,
-               * nothing tells you where to hold to move the window or where to press twice
-               * to maximize it.
+               * The band itself is not glass. It used to be a single strip across the
+               * whole width, which read as a second titlebar pasted over the app and
+               * put a lit edge above every page; the user asked for it gone. What
+               * survives is the same signal in two smaller places — the plate under
+               * the wordmark and the plate under the three buttons — so the strip
+               * still says "hold here to move, press twice to maximise" without
+               * drawing a bar across the window.
                */}
-              <div className="win-drag" data-glass data-config={cardGlass(18)} data-no-capture>
+              <div className="win-drag" data-no-capture>
                 <button
                   type="button"
                   className="win-title"
+                  data-glass
+                  data-config={cardGlass(18)}
+                  data-no-capture
                   data-tip="Double-click to maximise or restore"
                   onDoubleClick={() => void window.electronAPI?.maximizeWindow()}
                 >
@@ -1448,11 +1580,10 @@ export default function App() {
                               radius={18}
                               tint="var(--art-tint-strong)"
                               onClick={() => void pinFolder()}
-                              disabled={isScanning}
                               data-tip="Pin another folder into the library"
                             >
                               <Icon name="plus" size={13} />
-                              {isScanning ? 'Scanning…' : 'Add folder'}
+                              {scanAnnounced ? 'Scanning…' : 'Add folder'}
                             </GlassButton>
                             <GlassButton
                               radius={18}

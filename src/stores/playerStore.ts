@@ -79,6 +79,8 @@ interface PlayerStore extends PlayerState {
   /** Which settings group a caller wants landed on. */
   settingsSection: SettingsSection;
   avatarPath: string | null;
+  /** The name the greeting uses. Null follows the Windows account display name. */
+  userName: string | null;
   /** The mini player's second fixed state: the dark glass lyrics overlay. */
   miniLyrics: boolean;
   /**
@@ -134,6 +136,16 @@ interface PlayerStore extends PlayerState {
    * will want it to stay on.
    */
   lyricsFlat: boolean;
+  /**
+   * The track whose lyrics the user just put away, or null.
+   *
+   * Session state, deliberately not persisted and deliberately an id: it clears the
+   * moment a different track becomes current, so the next song is fetched as usual
+   * and this one is fetched again when it comes back round later. Refresh is the
+   * other way back. `hideLyricsPath` in `lrclib.ts` is the *permanent* version of
+   * this, and the two must not be confused.
+   */
+  lyricsHiddenFor: string | null;
   /**
    * Quotes the user added. They join the rotation after the built-in pool, so a
    * stored order of the right length still points at the same lines.
@@ -262,13 +274,18 @@ interface PlayerStore extends PlayerState {
   setQuotesInFullscreen: (on: boolean) => void;
   setLyricsEnabled: (on: boolean) => void;
   setLyricsFlat: (on: boolean) => void;
+  setLyricsHiddenFor: (id: string | null) => void;
   setAutoStartup: (on: boolean) => void;
+  /** Re-read what Windows will actually do at sign-in, which the shell can change. */
+  syncAutoStartup: () => void;
   setCloseToTray: (on: boolean) => void;
   setVideoFullscreen: (full: boolean) => void;
   setNowPlayingFull: (full: boolean) => void;
   /** The one entry point for changing view — the four modes are exclusive. */
   setView: (mode: ViewMode) => void;
   setAvatar: (path: string | null) => void;
+  /** Null restores the Windows account name. */
+  setUserName: (name: string | null) => void;
   /** Closes the first-run setup, whether it was finished or skipped. */
   setOnboarded: (done: boolean) => void;
   openSettings: (section?: SettingsSection) => void;
@@ -324,7 +341,7 @@ interface PlayerStore extends PlayerState {
 /**
  * The fields the library window owns outright.
  *
- * `partialize` output *replaces* the whole `silent-chaos-settings` key, and all
+ * `partialize` output *replaces* the whole settings key, and all
  * three renderers write that key — so a field a window leaves out of its copy is
  * deleted from storage, not merely skipped. These are read and changed only by the
  * library window, so every other window has to hand the stored values back
@@ -364,38 +381,39 @@ const initialState: PlayerState = {
    * Reading Windows' current wallpaper is the right answer for a person who chose
    * one and wants the player to agree with it, and the wrong one for a first run,
    * where the app has no idea what the desktop looks like and inherits a screenshot
-   * of somebody's holiday. ChaosX ships with the moon over red leaves; Settings
-   * offers the record and the record's colours as the two alternatives, and either
-   * choice persists over this default the moment it is made.
+   * of somebody's holiday. ChaosX ships a folder of its own; this is the one it
+   * opens with. It is a path relative to the document rather than an absolute one
+   * for the reason `toMediaUrl` documents: it has to resolve under the dev server,
+   * under `file://` in the packaged app, and in the portable exe, and a leading
+   * slash is the root of the drive under the last two.
    */
   background: 'custom',
-  wallpaperPath: '/brand/wallpaper.jpg',
+  wallpaperPath: '/brand/wallpapers/train_upscaled.jpg',
   wallpaperKind: 'image',
   /*
-   * The backdrop's own blur. Zero leaves the picture as it came off the disk;
-   * the shipped 24 is what the glass was set against before the blurred-cover
-   * mode existed, and it is the number the wallpaper was painted with.
+   * The backdrop's own blur. Zero: a wallpaper is chosen to be looked at, and the
+   * glass over it already softens everything behind it, so the room's default is the
+   * picture undisturbed and blur is something to ask for.
    */
-  wallpaperBlur: 24,
+  wallpaperBlur: 0,
   tintStrength: 30,
-  backdropDim: 0,
+  backdropDim: 38,
   /*
-   * Zero, because zero is the picture this app shipped with.
-   *
-   * The control deliberately does not sit on a hidden baseline boost of its own:
-   * the wallpaper's saturation at rest is the file's, and every lift the panels
-   * add on top of it belongs to those panels and is untouched by this slider. A
-   * default above zero would mean the neutral setting was a setting.
+   * Forty-four rather than the flat wash: the glass takes colour out of whatever is
+   * behind it, and this is where a shipped wallpaper still reads as a picture rather
+   * than a grey room with a bright window in it.
    */
-  backdropSat: 0,
+  backdropSat: 44,
   /*
-   * Every mode starts on the shipped picture. The two are spelled out rather than
-   * generated from one object so that changing what `art` rests at cannot move
-   * what `custom` rests at, which is the whole point of the field.
+   * Every mode rests where the user will first see it, and the three numbers above
+   * are `custom`'s. The two are spelled out rather than generated from one object so
+   * that changing what `art` rests at cannot move what `custom` rests at, which is
+   * the whole point of the field: the cover is already soft, so it wants more blur to
+   * stop fighting the glass and more depth to keep its own colour once it has had it.
    */
   tuneByMode: {
-    custom: { blur: 24, dim: 0, sat: 0 },
-    art: { blur: 24, dim: 0, sat: 0 },
+    custom: { blur: 0, dim: 38, sat: 44 },
+    art: { blur: 18, dim: 48, sat: 45 },
   },
   revealPlaylist: null,
   isScanning: false,
@@ -448,6 +466,32 @@ function writeTune(
   return { tuneByMode, backdropSat: val };
 }
 
+/*
+ * The settings key, and the one it replaces.
+ *
+ * Renamed with the app: `silent-chaos-*` is what the first copies of this player
+ * filed everything under, and the user asked for that name to be gone rather than
+ * merely unused. It cannot simply be dropped, because the playlists, the pinned
+ * folders, the statistics and the whole of the setup live inside it, and an upgrade
+ * that woke up with an empty library would read as the uninstall having eaten them.
+ *
+ * So the old blob is copied forward once, on the first load of a build that has no
+ * key of its own yet. It is left in place afterwards: an install that goes back to
+ * an older build still has what it needs, and one value of 30 KB is a cheap insurance
+ * against losing four hundred songs.
+ */
+const SETTINGS_KEY = 'chaosx-settings';
+const LEGACY_SETTINGS_KEY = 'silent-chaos-settings';
+
+try {
+  if (!localStorage.getItem(SETTINGS_KEY)) {
+    const carried = localStorage.getItem(LEGACY_SETTINGS_KEY);
+    if (carried) localStorage.setItem(SETTINGS_KEY, carried);
+  }
+} catch {
+  // No storage at all is a page that cannot persist anything, which the store already assumes.
+}
+
 export const usePlayerStore = create<PlayerStore>()(
   persist(
     (set, get) => ({
@@ -466,6 +510,7 @@ export const usePlayerStore = create<PlayerStore>()(
       pillReturnTo: null,
       settingsSection: 'general',
       avatarPath: null,
+      userName: null,
       miniLyrics: false,
       pillSide: PILL_SIDE_FROM_URL,
       playStats: readPlayStats(),
@@ -474,9 +519,17 @@ export const usePlayerStore = create<PlayerStore>()(
       quotesEnabled: true,
       pomodoroEnabled: true,
       clockInFullscreen: true,
-      quotesInFullscreen: true,
+      /*
+       * Off. The takeover is the record filling the room — cover, lyrics, the
+       * transport — and a line of advice laid over the middle of that is the one
+       * element in the view nobody went looking for. The sidebar still carries it,
+       * and this is a switch rather than a deletion, so anyone who wants it over the
+       * artwork turns it on and it stays on.
+       */
+      quotesInFullscreen: false,
       lyricsEnabled: true,
       lyricsFlat: false,
+      lyricsHiddenFor: null,
       customQuotes: [],
       quoteOrder: [],
       quotePos: 0,
@@ -486,8 +539,15 @@ export const usePlayerStore = create<PlayerStore>()(
       pomodoroWorkSec: 20 * 60,
       pomodoroBreakSec: 5 * 60,
       pomodoroRounds: 4,
-      autoStartup: false,
-      closeToTray: false,
+      /*
+       * Both on. A person who installs a player onto a laptop they use every day
+       * means it to be there when the machine wakes, and a player that quits to the
+       * taskbar bar rather than vanishing when they press the cross is the one that
+       * keeps playing while they do something else. The setup wizard asks before
+       * either is written anywhere, and Settings carries both switches.
+       */
+      autoStartup: true,
+      closeToTray: true,
       eq: { enabled: true, gains: EQ_BANDS_HZ.map(() => 0) },
       section: 'home',
       lyricsOffsetMs: 0,
@@ -731,6 +791,7 @@ export const usePlayerStore = create<PlayerStore>()(
       setQuotesInFullscreen: (on) => set({ quotesInFullscreen: on }),
       setLyricsEnabled: (on) => set({ lyricsEnabled: on }),
       setLyricsFlat: (on) => set({ lyricsFlat: on }),
+      setLyricsHiddenFor: (id) => set({ lyricsHiddenFor: id }),
       /*
        * Startup and tray are process settings, so the store asks main rather than
        * pretending to own them. The field is written optimistically and main's
@@ -740,7 +801,29 @@ export const usePlayerStore = create<PlayerStore>()(
        */
       setAutoStartup: (on) => {
         set({ autoStartup: on });
-        void window.electronAPI?.setAutoLaunch?.(on);
+        void window.electronAPI?.setAutoLaunch?.(on).then((state) => {
+          /*
+           * The shell has the last word. `setLoginItemSettings` reports success for
+           * writing the `Run` value, and the value being written is not the same
+           * thing as the app starting — Task Manager can still have it switched off
+           * beside it. Taking the answer back keeps this row honest instead of
+           * echoing what was asked for.
+           */
+          if (state && typeof state.enabled === 'boolean') set({ autoStartup: state.enabled });
+        });
+      },
+      /**
+       * Re-read the real login-item state, which is not what was last asked for.
+       *
+       * A user who switches ChaosX off in Task Manager's Startup tab has changed a
+       * fact this app cannot hear about unless it looks, and the setting used to
+       * keep saying On through the next reboot and the one after it.
+       */
+      syncAutoStartup: () => {
+        void window.electronAPI?.getAutoLaunch?.().then((state) => {
+          if (!state || typeof state.enabled !== 'boolean') return;
+          set({ autoStartup: state.enabled });
+        });
       },
       setCloseToTray: (on) => {
         set({ closeToTray: on });
@@ -812,6 +895,10 @@ export const usePlayerStore = create<PlayerStore>()(
         set({ section: 'settings', settingsSection: section }),
       closeSettings: () => set({ settingsSection: 'general' }),
       setAvatar: (path) => set({ avatarPath: path }),
+      setUserName: (name) => {
+        const clean = name?.trim().slice(0, 24) ?? '';
+        set({ userName: clean || null });
+      },
       setClipGuard: (enabled) => {
         set({ clipGuard: enabled });
         getEngine().setClippingGuard(enabled);
@@ -858,7 +945,7 @@ export const usePlayerStore = create<PlayerStore>()(
         })),
     }),
     {
-      name: 'silent-chaos-settings',
+      name: SETTINGS_KEY,
       partialize: (s) => {
         const persisted: Record<string, unknown> = {
           volume: s.volume,
@@ -891,6 +978,7 @@ export const usePlayerStore = create<PlayerStore>()(
           folders: s.folders,
           hiddenPaths: s.hiddenPaths,
           avatarPath: s.avatarPath,
+          userName: s.userName,
           pillSide: s.pillSide,
           eq: s.eq,
           customEq: s.customEq,
@@ -926,7 +1014,7 @@ export const usePlayerStore = create<PlayerStore>()(
              * envelope finds nothing and silently carries nothing, which is the bug
              * this whole branch exists to close.
              */
-            const env = JSON.parse(localStorage.getItem('silent-chaos-settings') ?? 'null') as
+            const env = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? 'null') as
               | { state?: Record<string, unknown> }
               | null;
             const stored = env?.state;
@@ -961,7 +1049,7 @@ export const usePlayerStore = create<PlayerStore>()(
        * default would be overwritten by it on the first hydrate — a migration is the
        * only way to flip it once without making the Settings toggle pointless.
        */
-      version: 7,
+      version: 8,
       migrate: (persisted, from) => {
         const p = persisted as Record<string, unknown> | null;
         if (p && from < 2) p.clipGuard = false;
@@ -1039,6 +1127,27 @@ export const usePlayerStore = create<PlayerStore>()(
           if (tune) delete tune.gradient;
         }
         /*
+         * Re-baseline the backdrop's three sliders to where the app is now meant to
+         * rest — custom 0 / 38 / 44, album art 18 / 48 / 45.
+         *
+         * An existing profile carries its own numbers, and a default is worth nothing
+         * against a stored value, so this has to be a migration. It runs once, and it
+         * runs last: the two blocks above also write `tuneByMode`, and a baseline that
+         * they overwrote would be no baseline at all. After this, moving a slider is
+         * the user's own answer and sticks.
+         */
+        if (p && from < 8) {
+          const fresh: Record<string, BackdropTune> = {
+            custom: { blur: 0, dim: 38, sat: 44 },
+            art: { blur: 18, dim: 48, sat: 45 },
+          };
+          p.tuneByMode = fresh;
+          const here = fresh[p.background === 'art' ? 'art' : 'custom'];
+          p.wallpaperBlur = here.blur;
+          p.backdropDim = here.dim;
+          p.backdropSat = here.sat;
+        }
+        /*
          * One last narrowing, whatever the stored version was: `background` must be
          * a value this build paints and `tuneByMode` must have a row for it, or
          * `setBackground` reads a slider set that is `undefined` and throws on the
@@ -1074,6 +1183,21 @@ export const usePlayerStore = create<PlayerStore>()(
  * window can be more than one listen behind.
  */
 subscribePlayStats((playStats) => usePlayerStore.setState({ playStats }));
+
+/*
+ * "Hide lyrics" lasts exactly as long as the song it was pressed on.
+ *
+ * Seven paths in the engine make a track current — a row click, a queue jump, the
+ * strip, an auto-advance, a hardware media key — and a clear written into each of
+ * them is a clear waiting to be missed, so it lives here against the store's own
+ * transitions. Play another song and come back to this one later and its words are
+ * fetched again, which is what the button is meant to mean.
+ */
+usePlayerStore.subscribe((s, prev) => {
+  if (s.lyricsHiddenFor && s.currentTrack?.id !== prev.currentTrack?.id) {
+    usePlayerStore.setState({ lyricsHiddenFor: null });
+  }
+});
 
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__store = usePlayerStore;

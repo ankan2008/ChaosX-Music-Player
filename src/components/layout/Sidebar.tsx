@@ -18,6 +18,24 @@ const NAV = [
   { id: 'settings', label: 'Settings', icon: 'settings' },
 ] as const;
 
+/**
+ * The clock's numeral height for a window this tall.
+ *
+ * The digits are masks cut from the font at one fixed height and laid out at it in
+ * pixels, so CSS cannot shrink them the way it shrinks everything else — a `font-size`
+ * change would not touch a mask. On a 1366x768 panel at 125% scaling the content
+ * column is about 580 CSS pixels tall, and the four cards in the sidebar's stack
+ * (greeting, navigation, quote, clock) plus the pomodoro below them need roughly 640
+ * at the sizes this app was designed against. The clock is the one surface in that
+ * stack whose whole job is four numerals, so it is the one that gives.
+ */
+function clockDigitHeight(innerHeight: number): number {
+  if (innerHeight <= 600) return 17;
+  if (innerHeight <= 680) return 20;
+  if (innerHeight <= 780) return 23;
+  return 27;
+}
+
 const Sidebar: React.FC<{
   className?: string;
 }> = ({ className = '' }) => {
@@ -35,6 +53,7 @@ const Sidebar: React.FC<{
    * before it decides how to draw it.
    */
   const [avatarAspect, setAvatarAspect] = useState(0);
+  const [digitHeight, setDigitHeight] = useState(() => clockDigitHeight(window.innerHeight));
   const navRef = useRef<HTMLDivElement | null>(null);
   /* Counted from the same array the markup maps over, never stored. */
   const navIndex = Math.max(0, NAV.findIndex((item) => item.id === section));
@@ -71,7 +90,20 @@ const Sidebar: React.FC<{
     });
   }, []);
 
-  const rawName = user?.displayName || user?.username || 'there';
+  /*
+   * Re-read the height rather than asking the user to close and reopen the window.
+   * Snapping ChaosX to half a screen is the common way this column gets short, and
+   * the clock should be smaller the moment it does rather than at the next launch.
+   */
+  useEffect(() => {
+    const onResize = () => setDigitHeight(clockDigitHeight(window.innerHeight));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const customName = usePlayerStore((s) => s.userName);
+  const [nameEdit, setNameEdit] = useState(false);
+  const rawName = customName || user?.displayName || user?.username || 'there';
   const username = rawName.charAt(0).toUpperCase() + rawName.slice(1);
 
   return (
@@ -158,7 +190,60 @@ const Sidebar: React.FC<{
           </div>
           <div className="user-greeting">
             <span className="greeting-word">Welcome,</span>
-            <span className="greeting-name">{username}</span>
+            {nameEdit ? (
+              <input
+                className="greeting-input"
+                autoFocus
+                defaultValue={username}
+                maxLength={24}
+                aria-label="Your name"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    // Closing the field unmounts it, and an unmounted input never
+                    // fires `blur`, so Enter has to write the value itself.
+                    usePlayerStore.getState().setUserName(e.currentTarget.value);
+                    setNameEdit(false);
+                  } else if (e.key === 'Escape') {
+                    usePlayerStore.getState().setUserName(null);
+                    setNameEdit(false);
+                  }
+                }}
+                onBlur={(e) => {
+                  usePlayerStore.getState().setUserName(e.currentTarget.value);
+                  setNameEdit(false);
+                }}
+              />
+            ) : (
+              <>
+                <span className="greeting-name">{username}</span>
+                {/*
+                 * The name is the Windows account's until the user says otherwise,
+                 * and the reset only has something to undo once they have. Same
+                 * shape as the avatar's pair of badges, so the two read as one
+                 * lockup rather than two unrelated hover affordances.
+                 */}
+                <button
+                  type="button"
+                  className="greeting-edit"
+                  onClick={() => setNameEdit(true)}
+                  data-tip="Change your name"
+                  aria-label="Change your name"
+                >
+                  <Icon name="pencil" size={10} />
+                </button>
+                {customName ? (
+                  <button
+                    type="button"
+                    className="greeting-edit"
+                    onClick={() => usePlayerStore.getState().setUserName(null)}
+                    data-tip="Use the Windows account name"
+                    aria-label="Use the Windows account name"
+                  >
+                    <Icon name="refresh" size={10} />
+                  </button>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -222,7 +307,7 @@ const Sidebar: React.FC<{
              * thing it was there to do — separate the day from the numerals — the
              * gap between them does for free.
              */}
-            <GlassClock digitHeight={27} className="sidebar-clock" plainDate />
+            <GlassClock digitHeight={digitHeight} className="sidebar-clock" plainDate />
           </div>
         ) : null}
       </div>

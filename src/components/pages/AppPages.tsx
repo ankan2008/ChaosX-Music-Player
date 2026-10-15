@@ -569,7 +569,7 @@ export const LibraryPage: React.FC = () => {
          * Small Potato Mode used to leave the sheet out. That was over-cutting
          * dressed up as optimisation: the panel is DOM text and one CSS transition
          * on the highlighter, and the only recurring cost is a network lookup that
-         * happens once per song and is then cached in `silent-chaos-lyrics`. The
+         * happens once per song and is then cached in `chaosx-lyrics`. The
          * mode's real budget goes to the WebGL scene pass, which it already declines
          * at `App.tsx`. So the card answers to `lyricsEnabled` and to nothing else.
          */}

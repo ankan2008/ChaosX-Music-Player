@@ -620,6 +620,7 @@ export class LiquidGlass {
 	private readonly _onPointerMove: (e: PointerEvent) => void;
 	private readonly _onPointerUp: (e: PointerEvent) => void;
 	private readonly _onScroll: (e: Event) => void;
+	private readonly _onMediaState: (e: Event) => void;
 
 	// ────────────────────────────────────────────
 	// Idle resting state (all of it gated by `restWhenIdle`)
@@ -633,6 +634,11 @@ export class LiquidGlass {
 	private _restProbeCount = 0;
 	/** Consecutive frames that found nothing to do; parks at `REST_SETTLE_FRAMES`. */
 	private _idleStreak = 0;
+	/**
+	 * A surface is waiting to be painted: its canvas was just re-sized, which
+	 * cleared it, so the quality tier cannot be allowed to skip this frame.
+	 */
+	private _mustPaint = false;
 	/** Where every registered glass was painted when the loop parked. */
 	private _restRects: Array<RestGeometry & { el: HTMLElement }> = [];
 	/** Where the root was when the loop parked. */
@@ -689,6 +695,22 @@ export class LiquidGlass {
 			const target = e.target as HTMLElement | null;
 			if (target && target.nodeType === 1) this.markChanged(target);
 		};
+		/*
+		 * `play`, `pause` and `ended` do not bubble either, so they are captured on
+		 * the root alongside `scroll`.
+		 *
+		 * Whether the scene contains a live video is the one fact that decides if
+		 * the loop re-composites everything every frame or only what moved, and
+		 * until now it was only re-read on init and on a DOM mutation. A clip that
+		 * starts playing on hover mutates nothing, so the engine would keep
+		 * refracting the frame it froze on; a clip that stops would leave it
+		 * re-composing the whole scene forever, which on the wallpaper grid — six
+		 * paused thumbnails — was measured at 110 ms a frame against 36 ms.
+		 */
+		this._onMediaState = () => {
+			this._needsDynamicRescan = true;
+			this._wake();
+		};
 		// A CSS transition or animation beginning is movement we cannot see in
 		// the DOM, and once the loop has parked there is no frame left to notice
 		// it. Both events bubble, so one listener on root covers panels and the
@@ -727,6 +749,9 @@ export class LiquidGlass {
 		window.addEventListener('pointermove', this._onPointerMove);
 		window.addEventListener('pointerup', this._onPointerUp);
 		this.root.addEventListener('scroll', this._onScroll, true);
+		this.root.addEventListener('play', this._onMediaState, true);
+		this.root.addEventListener('pause', this._onMediaState, true);
+		this.root.addEventListener('ended', this._onMediaState, true);
 
 		this._observer = new MutationObserver(() => {
 			// Structural mutation: painting order may have shifted,
@@ -800,6 +825,9 @@ export class LiquidGlass {
 		window.removeEventListener('pointermove', this._onPointerMove);
 		window.removeEventListener('pointerup', this._onPointerUp);
 		this.root.removeEventListener('scroll', this._onScroll, true);
+		this.root.removeEventListener('play', this._onMediaState, true);
+		this.root.removeEventListener('pause', this._onMediaState, true);
+		this.root.removeEventListener('ended', this._onMediaState, true);
 
 		this._observer?.disconnect();
 		this._observer = null;
@@ -1431,12 +1459,20 @@ export class LiquidGlass {
 				return true;
 			}
 		}
-		// Also: any video element is implicitly dynamic (live frames).
+		// Also: a video that is actually delivering frames is dynamic.
+		//
+		// "any video element" was the rule, and it read as safe — a video is
+		// moving, so re-composite. It is wrong for a video that is sitting paused
+		// on screen, which is the state every thumbnail strip and every hover
+		// preview lives in: `hasDynamic` short-circuits the per-panel dirty check
+		// and forces the whole scene to re-composite on every frame, forever, for a
+		// picture that is not changing. Measured on the wallpaper grid — six paused
+		// clips, and scrolling went from 36 ms a frame to 110 ms.
 		const videos = this.root.querySelectorAll('video');
 		for (const vid of videos) {
-			if (!this.glassSet.has(vid as unknown as HTMLElement)) {
-				return true;
-			}
+			if (this.glassSet.has(vid as unknown as HTMLElement)) continue;
+			if (vid.paused || vid.ended) continue;
+			return true;
 		}
 		return false;
 	}
@@ -1742,6 +1778,9 @@ export class LiquidGlass {
 		this._idle.delete(el);
 		this._updateGlassCanvasSize(el);
 		this._glassDirty.add(el);
+		// Re-sizing the canvas above emptied it, so this frame cannot be the one
+		// the quality tier skips.
+		this._mustPaint = true;
 		// Panels drawn above this one read its shader canvas, so they need the frame
 		// that puts it back too.
 		this._markGlassAndDependents(el);
@@ -1795,6 +1834,23 @@ export class LiquidGlass {
 		 */
 		const wantW = Math.max(maxW, this._frameDemandW);
 		const wantH = Math.max(maxH, this._frameDemandH);
+		/*
+		 * Only on a frame that has nothing left to paint.
+		 *
+		 * Assigning `canvas.width` clears the canvas, and the scene canvas is the
+		 * buffer every panel samples from. `_frameDemand*` is zeroed at the top of
+		 * `_renderFrame` and refilled as panels are drawn, so when a frame is still
+		 * pending the bound being computed here is last frame's — and during a fast
+		 * scroll this frame's panels want more than that. The shrink then cut the
+		 * buffer out from under them and they sampled past its edge, which is the
+		 * glass going flat black mid-flick. Deferring to a quiet frame costs one
+		 * reallocation and removes the class of it.
+		 */
+		if (this._glassDirty.size > 0
+			|| this._userMarkedChanged.size > 0
+			|| this._globalDirty
+			|| this._hasDynamic
+			|| this._drag.active) return;
 		if (wantW > 0 && this._sceneCanvas.width > wantW) this._sceneCanvas.width = wantW;
 		if (wantH > 0 && this._sceneCanvas.height > wantH) this._sceneCanvas.height = wantH;
 	}
@@ -2221,8 +2277,21 @@ export class LiquidGlass {
 		 * tier is that refraction updates at 30 Hz instead of 60. Nothing that
 		 * moves sharply does: the record underneath keeps turning at whatever
 		 * rate the page is running, because that is CSS, not this loop.
+		 *
+		 * That reasoning fails in two cases, and both were visible. A surface
+		 * that was just resumed has had its canvas re-sized, which clears it, so
+		 * the frame it is skipped in is a panel painted from an empty buffer —
+		 * the glass going black for a beat on exactly the cards that are moving.
+		 * And a scroll arrives as `markChanged()` calls rather than as dirties,
+		 * because nothing in the DOM mutated, so the tier dropped the one refresh
+		 * the user is watching for. Both now hold the frame.
 		 */
-		if (this.quality > 1 && this._frameTick % this.quality !== 0) {
+		const mustDraw = this._mustPaint
+			|| this._glassDirty.size > 0
+			|| this._userMarkedChanged.size > 0
+			|| this._drag.active;
+		this._mustPaint = false;
+		if (this.quality > 1 && !mustDraw && this._frameTick % this.quality !== 0) {
 			this._frameTick++;
 			this._scheduleNext();
 			return;

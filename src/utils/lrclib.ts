@@ -14,7 +14,17 @@ import { durationRatio, lookupNames, rescaleLines, titleSimilarity } from './lyr
  * fields in. Nothing downstream changes.
  */
 
-const STORE_KEY = 'silent-chaos-lyrics';
+const STORE_KEY = 'chaosx-lyrics';
+/* Filed under the app's first name. Copied forward once on load, because a lyric
+   cache is days of lookups and a user has no way to notice them missing. */
+const LEGACY_STORE_KEY = 'silent-chaos-lyrics';
+try {
+  const carried = localStorage.getItem(LEGACY_STORE_KEY);
+  if (carried && !localStorage.getItem(STORE_KEY)) localStorage.setItem(STORE_KEY, carried);
+} catch {
+  // A page with no storage has nothing to carry and nothing to cache.
+}
+
 const API = 'https://lrclib.net/api';
 /** Don't re-query a track nobody has matched for a day. */
 const MISS_RETRY_MS = 24 * 60 * 60 * 1000;

@@ -605,6 +605,28 @@ export function useLibrary() {
     let finished = 0;
     let lastPublish = 0;
 
+    /*
+     * Everything read since the last write, and the one way it leaves this window.
+     *
+     * The whole index used to be handed to the main process on every publish, and the
+     * main process answered by reading the file, parsing it, merging, stringifying and
+     * rewriting it — 23 MB of both, three times a second, for the whole of a first
+     * scan. That is the five minutes of a 2.3 GB, 100%-CPU, one-frame-a-second boot
+     * that only a *fresh* install pays: with a warm cache `changed` is empty and none
+     * of it runs, which is exactly why it looked like the uninstall had caused it.
+     */
+    const dirty: LibraryCache = {};
+    const flushDirty = () => {
+      const keys = Object.keys(dirty);
+      if (!keys.length) return;
+      const set: LibraryCache = {};
+      for (const key of keys) {
+        set[key] = dirty[key];
+        delete dirty[key];
+      }
+      window.electronAPI?.patchLibraryCache({ set });
+    };
+
     const publish = () => {
       /*
        * The list's number column is position-within-folder, and the scan order
@@ -675,7 +697,9 @@ export function useLibrary() {
        * from a screen and a cover is 56 KB.
        */
       tracks[index] = rowWithoutArt(track);
-      cache[file.fullPath] = { stamp: stampOf(file), track };
+      const entry = { stamp: stampOf(file), track };
+      cache[file.fullPath] = entry;
+      dirty[file.fullPath] = entry;
       finished++;
       const now = Date.now();
       if (now - lastPublish > 300 || finished === changed.length) {
@@ -685,18 +709,24 @@ export function useLibrary() {
          * Persisted as it goes. The save used to sit after the whole loop, so a
          * scan that was interrupted — a reload, a crash, a window closed — kept
          * none of the work it had already paid for and the next one started from
-         * zero. Debounced by the same 300 ms gate as the publish.
+         * zero. Debounced by the same 300 ms gate as the publish; the main process
+         * folds those into at most one write every few seconds.
          */
-        void window.electronAPI?.saveLibraryCache(cache);
+        flushDirty();
       }
     });
 
     const stillThere = new Set(files.map((f) => f.fullPath));
     const root = folder.path.toLowerCase();
+    const gone: string[] = [];
     for (const key of Object.keys(cache)) {
-      if (key.toLowerCase().startsWith(root) && !stillThere.has(key)) delete cache[key];
+      if (key.toLowerCase().startsWith(root) && !stillThere.has(key)) {
+        delete cache[key];
+        gone.push(key);
+      }
     }
-    if (changed.length > 0) void window.electronAPI.saveLibraryCache(cache);
+    if (gone.length) window.electronAPI?.patchLibraryCache({ remove: gone });
+    flushDirty();
     const found = tracks.filter(Boolean);
     publish();
 

@@ -272,6 +272,72 @@ const SettingsPanel: React.FC = () => {
   const section = usePlayerStore((s) => s.settingsSection);
   const [picking, setPicking] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  /*
+   * The shipped wallpaper set, read off disk rather than hard-coded.
+   *
+   * Main hands back the folder *and* its contents, so what the picker offers is
+   * what is actually installed — and a user who drops another picture or film into
+   * that folder sees it here on the next open without anything being rebuilt. That
+   * is also why the path is printed under the Replace button rather than hidden:
+   * the sentence is only useful if it names the folder it means.
+   */
+  const [stock, setStock] = useState<{
+    dir: string;
+    items: { name: string; path: string; kind: 'image' | 'video' }[];
+  }>({ dir: '', items: [] });
+
+  useEffect(() => {
+    void window.electronAPI?.getStockWallpapers?.().then((got) => {
+      if (got) setStock(got);
+    });
+  }, []);
+
+  /*
+   * Read from the shell rather than remembered. A taskbar button is the shell's
+   * object, and the user can unpin it without ever opening this app — a switch that
+   * kept its own copy of the answer would lie.
+   */
+  const [pinned, setPinned] = useState(false);
+  /** Windows has the prompt up and the answer has not come back yet. */
+  const [pinPending, setPinPending] = useState(false);
+  /** Why the last attempt failed, in the shell's words rather than a shrug. */
+  const [pinError, setPinError] = useState<string | null>(null);
+  useEffect(() => {
+    void window.electronAPI?.isTaskbarPinned?.().then((on) => setPinned(on === true));
+    /*
+     * The login item is the other thing on this page that Windows can change
+     * behind the app's back. Task Manager's Startup tab switches a login item off
+     * without deleting it, and nothing about `setLoginItemSettings` ever mentions
+     * the veto — so the only way this row can tell the truth is to ask the shell
+     * what will actually happen at the next sign-in.
+     */
+    store().syncAutoStartup();
+  }, []);
+
+  const togglePin = () => {
+    const next = !pinned;
+    setPinError(null);
+    /*
+     * On is a request Windows may take its time over, so the button says what is
+     * happening rather than guessing: the state is only touched once the shell has
+     * answered, and a refusal re-reads the bar instead of assuming the old answer.
+     */
+    if (next) setPinPending(true);
+    else setPinned(false);
+    void window.electronAPI
+      ?.setTaskbarPinned?.(next)
+      .then(async (reply) => {
+        const on = await window.electronAPI?.isTaskbarPinned?.();
+        setPinned(on === true);
+        if (reply && !reply.ok) setPinError(reply.error ?? 'Windows did not add the pin');
+      })
+      .finally(() => setPinPending(false));
+  };
+
+  const chooseStock = (item: { path: string; kind: 'image' | 'video' }) => {
+    store().setWallpaper(item.path, item.kind);
+    store().setBackground('custom');
+  };
 
   // The pill and HUD equalizer buttons ask for that group specifically.
   useEffect(() => {
@@ -384,7 +450,9 @@ const SettingsPanel: React.FC = () => {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs truncate">{wallpaperPath.split(/[\/]/).pop()}</p>
+                  <p className="text-xs truncate">
+                    {wallpaperPath.split(/[\\/]/).pop()}
+                  </p>
                   <div className="flex gap-2 mt-2">
                     <button
                       onClick={() => void pickWallpaper()}
@@ -394,7 +462,88 @@ const SettingsPanel: React.FC = () => {
                       {picking ? 'Opening…' : 'Replace'}
                     </button>
                   </div>
+                  {/*
+                   * The folder, spelled out, because it is the answer to the next
+                   * question anyone who reads this will ask — where are they, and can
+                   * I have another one. Pressing it opens the same folder in Explorer,
+                   * and anything dropped into it turns up in the strip below the next
+                   * time this card is opened.
+                   */}
+                  {stock.dir ? (
+                    <p className="settings-hint stock-note">
+                      Check out the stock wallpapers from{' '}
+                      <button
+                        type="button"
+                        className="stock-note-path"
+                        onClick={() => void window.electronAPI?.openStockWallpapers?.()}
+                        data-tip="Open the folder"
+                      >
+                        {stock.dir}
+                      </button>
+                    </p>
+                  ) : null}
                 </div>
+              </div>
+            ) : null}
+            {background === 'custom' && stock.items.length ? (
+              <div className="stock-wallpapers" role="listbox" aria-label="Stock wallpapers">
+                {stock.items.map((item) => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    role="option"
+                    aria-selected={wallpaperPath === item.path}
+                    className={`stock-tile ${wallpaperPath === item.path ? 'is-active' : ''}`}
+                    onClick={() => chooseStock(item)}
+                    data-tip={item.name}
+                  >
+                    {item.kind === 'video' ? (
+                      /*
+                       * No `autoPlay`, and this is not a taste call.
+                       *
+                       * Six clips playing at once was what the grid used to be, and
+                       * it cost the page twice over. Every live `<video>` inside the
+                       * glass root sets the engine's `hasDynamic` flag, which makes
+                       * it re-composite the whole scene on every frame rather than
+                       * only the panels that moved — measured at a median frame of
+                       * 110 ms while scrolling Settings, against 36 ms with the
+                       * canvases taken away. On a two-core laptop that is the
+                       * reported lag, and the six decoders are a slice of the
+                       * reported memory as well.
+                       *
+                       * Hover is the one place a clip earns its keep, so it plays
+                       * there and is parked to a still frame everywhere else.
+                       */
+                      <video
+                        src={toMediaUrl(item.path)}
+                        muted
+                        loop
+                        playsInline
+                        preload="metadata"
+                        onLoadedData={(e) => {
+                          // A frame to look at, taken once and then frozen — the
+                          // tile has to read as a picture until it is asked for.
+                          const v = e.currentTarget;
+                          if (v.paused) v.currentTime = Math.min(0.6, (v.duration || 1) / 3);
+                        }}
+                        onMouseEnter={(e) => void e.currentTarget.play().catch(() => undefined)}
+                        onMouseLeave={(e) => {
+                          const v = e.currentTarget;
+                          v.pause();
+                          v.currentTime = Math.min(0.6, (v.duration || 1) / 3);
+                        }}
+                      />
+                    ) : (
+                      <img src={toMediaUrl(item.path)} alt="" loading="lazy" />
+                    )}
+                    <span className="stock-tile-name truncate">{item.name}</span>
+                    {item.kind === 'video' ? (
+                      <span className="stock-tile-flag" aria-hidden>
+                        <Icon name="theatre" size={10} />
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
               </div>
             ) : null}
           </div>
@@ -657,6 +806,29 @@ const SettingsPanel: React.FC = () => {
                 The close button hides ChaosX into the notification-area overflow instead
                 of quitting. Off, closing the window ends the app.
               </p>
+            </div>
+            <div className="settings-plate">
+              <div className="settings-switch-row">
+                <span>Pin to taskbar</span>
+                <button
+                  onClick={togglePin}
+                  disabled={pinPending}
+                  className={`liquid-glass-btn small-text squish pill-choice ${pinned ? 'active' : ''}`}
+                >
+                  {pinPending ? 'Waiting on Windows…' : pinned ? 'On' : 'Off'}
+                </button>
+              </div>
+              <p className="settings-hint">
+                ChaosX asks Windows to pin it, and Windows shows its own confirmation.
+                Accept that and the icon is on the bar straight away. Taking it back off
+                is done on the bar itself — Windows will not hand a pin back to the app
+                that asked for it.
+              </p>
+              {pinError ? (
+                <p className="settings-hint settings-hint-warn">
+                  Not pinned: {pinError}.
+                </p>
+              ) : null}
             </div>
           </section>
 
