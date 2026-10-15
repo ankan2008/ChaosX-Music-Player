@@ -1,88 +1,146 @@
+# 🎧 ChaosX — Music Player (Mark x1.0)
+
+## 🌌 Introduction
+
+ChaosX is an offline-first music player for Windows, built for people who want more than just a play button. It supports a wide range of audio formats, along with offline video playback, wrapped in a highly polished **Liquid Glass + Gaussian Blur** interface powered by a real shader engine — not just basic CSS glassmorphism.
+
+Designed to run on modest hardware, ChaosX targets systems with at least a dual-core, 4-thread CPU and 4 GB of RAM. Every detail, from audio handling to subtle UI animations, is designed to make everyday listening feel special without demanding flagship hardware. It's more than a music player; it's a complete desktop experience for students and adults who value their local music libraries, including lossless audio, without the ads and compromises of online streaming.
+
+## ✨ Features
+
+- 🎵 **Wide Format Support:** Play a broad range of audio formats, plus offline video playback.
+- 🎧 **Gapless Playback:** Enjoy continuous listening with gapless playback enabled by default.
+- 🎚️ **Audio Controls:** Fine-tune playback speed and pitch, with built-in equalizers and essential playback controls.
+- 🎤 **Lyrics Support:** Fetch lyrics through LRCLIB. Accuracy and availability depend on the provider and track metadata.
+- 🪟 **Four Playback Modes:** Switch between the main player, fullscreen music/video mode, a compact miniplayer, and the pill mode.
+- ⌨️ **Custom Controls:** Remap keybinds and control playback using supported hardware media keys.
+- 🪄 **Real Liquid Glass UI:** A shader-powered visual experience combining liquid-glass effects, Gaussian blur, and carefully tuned animations.
+- 🎨 **Dynamic Theme Engine:** Transform your player using album-art-based backdrops. Adjust blur, darkness, and colour depth to match your taste.
+- 🖼️ **Custom Wallpapers:** Use static or live wallpapers, including a selection of developer-curated options. You can also add your own wallpapers, and tweak colours here too.
+- 🕰️ **In-App Goodies:** Enjoy an iOS-inspired liquid-glass clock, quote cards, and a built-in Pomodoro timer.
+- 📊 **Listening Statistics:** Track your most-played and recently played songs, total track counts, listening durations, and on-site hardware resource usage.
+
+📸 **Screenshots:** Check out the screenshots below to explore the interface, playback modes, themes, and other features in action.
+
+### Home & Library
+
 <p align="center">
-  <img src="public/brand/wordmark.png" alt="ChaosX" height="72">
+  <img src="docs/screenshots/01-home.webp" alt="The Home page" width="860"><br>
+  <em><b>Home</b> — continue listening, most played and last played, over a live wallpaper.</em>
 </p>
 
-<h1 align="center">ChaosX — Mark x1.0</h1>
-
 <p align="center">
-  A liquid-glass music and video player built for the laptops nobody builds for.
+  <img src="docs/screenshots/02-library.webp" alt="The Library page with lyrics" width="860"><br>
+  <em><b>Library</b> — 418 songs from pinned folders, with the now-playing card and synchronised lyrics docked alongside.</em>
 </p>
 
-<!-- ============================================================
-     ADD YOUR SCREENSHOTS HERE
-     Drop images into docs/screenshots/ and swap the lines below.
-     Four that carry this app: the library, the fullscreen record,
-     the pill docked to a screen edge, and the mini player.
-     ============================================================ -->
+### Statistics & Settings
 
 <p align="center">
-  <em>[ screenshot: the library, maximised ]</em>
+  <img src="docs/screenshots/03-statistics.webp" alt="The Statistics page" width="860"><br>
+  <em><b>Statistics</b> — listening totals next to live memory, CPU and battery, read from the same counters Task Manager shows.</em>
 </p>
+
+<p align="center">
+  <img src="docs/screenshots/04-settings.webp" alt="The Settings page" width="860"><br>
+  <em><b>Settings</b> — background and wallpaper picker on the left, widget switches on the right. Every wallpaper is swappable with your own.</em>
+</p>
+
+### The other modes
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/05-fullscreen.webp" alt="Fullscreen music mode"><br>
+      <em><b>Fullscreen music</b> — the record filling the monitor, with lyrics and the glass clock over it.</em>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/09-album-art-theme.webp" alt="Album-art backdrop theme"><br>
+      <em><b>Dynamic theme</b> — the backdrop drawn from the playing record instead of a wallpaper, glass and all.</em>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <img src="docs/screenshots/06-mini.webp" alt="The mini player, collapsed"><br>
+      <em><b>Mini, collapsed</b> — a floating card that stays above everything else you are doing.</em>
+    </td>
+    <td>
+      <img src="docs/screenshots/07-mini-expanded.webp" alt="The mini player, expanded"><br>
+      <em><b>Mini, expanded</b> — the full transport, still inside that card.</em>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="docs/screenshots/08-pill.webp" alt="Pill mode docked to the right edge"><br>
+      <em><b>Pill mode</b> — the transport as a capsule docked to a screen edge, expanding from the side it lives on.</em>
+    </td>
+  </tr>
+</table>
+
+## 🛠️ Bugs & Known Issues
+
+ChaosX is still in its early stages, so expect occasional bugs, unexpected behaviour, and even sudden crashes. Subtle stutters may occur on weaker hardware, particularly when demanding visual effects are active.
+
+Bug reports, suggestions, and constructive criticism are always welcome! ❤️ Just keep things respectful, there's a human behind the project, and the developer is a little sensitive. Please include steps to reproduce a bug whenever possible; it makes fixing things much easier.
+
+## 🚧 What's Next?
+
+Some ideas are already on the wishlist, while others are still being explored:
+
+- 🌐 **Online Music Playback:** Partial support for online music playback, ideally without ads. This is still a wishlist item, and implementation may be challenging.
+- 🧠 **Mood-Based Queue:** A lightweight system that builds a queue from your available songs based on your mood.
+- 🐧 **Cross-Platform Support:** Potential ports to Linux, macOS, and Android.
+- ⚡ **A More Efficient Engine:** Exploring a complete rewrite using a more efficient underlying engine.
+- 🔄 **OTA Updates:** Over-the-air updates to make keeping the player up to date easier.
+
+These are plans and possibilities, not promises. Feature requests are welcome, but implementation depends on feasibility, time, and available resources.
+
+## 📦 Dependencies
+
+*Dependencies and third-party libraries are listed in its own document.*
+
+The full inventory — runtime libraries and their transitive packages, build tooling, the
+vendored glass engine, the bundled mpv and FFmpeg binaries, typefaces, icons and the
+lyrics service, each with author and licence — lives in
+**[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)**.
+
+## 💖 Credits & Acknowledgements
+
+ChaosX is an independent, vibe-coded project built with a lot of experimentation, late nights, and a genuine love for music and UI customization, and UX. Credit goes to the developers and maintainers of the libraries, frameworks, audio tools, and other technologies that make this project possible, as well as the testers whose time, feedback, and bug reports help improve the experience.
+
+Runs on [Electron](https://www.electronjs.org/), [React](https://react.dev/),
+[Vite](https://vite.dev/), [zustand](https://github.com/pmndrs/zustand),
+[Tone.js](https://tonejs.github.io/), [music-metadata](https://github.com/Borewit/music-metadata),
+[koffi](https://koffi.dev/) and [mpv](https://mpv.io/). Lyrics come from
+[LRCLIB](https://lrclib.net/). The refracting glass is a modified port of
+[liquidglass](https://github.com/ybouane/liquidglass) by [ybouane](https://x.com/ybouane).
+Interface icons are from the [Plumpy set by Icons8](https://icons8.com/icons/set/plumpy).
+
+If you enjoy ChaosX, consider ⭐ starring the repository, sharing your feedback, reporting bugs, or suggesting features. Every bit of support helps the project grow.
+
+**Built with passion. Designed for the experience. 🎶**
+**By Ankan.**
 
 ---
 
-## What it is
-
-ChaosX plays the music and films already on your disk. There is no account, no store, no
-streaming service and no telemetry — you pin a folder, it reads the tags off what is
-inside, and that is the library.
-
-It was written against a two-core, 6 GB machine, which is the reason it looks the way it
-does and the reason it does not look like the rest of them. Every refracting surface is
-drawn in a WebGL scene pass that is fed by a single blurred copy of the wallpaper, so the
-glass bends what is actually behind it rather than a colour swatch standing in for it.
-The whole interface is one renderer, and the memory it holds is measured rather than
-hoped for.
-
-## Five ways to wear it
-
-| Mode | What it is |
-| --- | --- |
-| **Library** | the normal window — folders, playlists, search, statistics |
-| **Fullscreen music** | the record filling the monitor, taskbar included, with the lyrics and the clock over it |
-| **Mini** | a 250px floating card that sits above everything else you are doing |
-| **Pill** | the transport as a capsule docked to a screen edge, expanding from the side it lives on |
-| **Video** | films played through the page, so the glass bends the picture |
-
-## What is in it
-
-- **Library from pinned folders** — folders are directories, so they are never editable;
-  playlists are the thing you build, and removing a song from one never touches your disk.
-- **Two queues** — what is playing now, and what you are adding next, with drag reorder
-  and autoscroll while you drag near an edge.
-- **Lyrics** with per-line timing, line-by-line or all at once, and a way to stop
-  highlighting a sheet that is out of sync. Fetched once per song and cached.
-- **Video** through an embedded mpv surface, with pitch and speed control that hold up on
-  a slow machine, and a film that takes the slot the lyric sheet was using.
-- **Widgets** you can switch on and off independently in normal mode and in fullscreen: a
-  clock, motivational quotes, a pomodoro hourglass, battery and system meters.
-- **Statistics** — most played, last played, play counts that survive a restart, and a
-  read of the app's own memory from the same counter Task Manager shows you.
-- **Hardware media keys and SMTC**, claimed for the life of the app, so a touchpad gesture
-  pauses a track even when the window is hidden or covered.
-- **An equalizer, a waveform scrubber, shuffle that keeps a session order the queue can
-  edit, and a repair button** that restarts the process with Chromium's cache cleared.
-
-## Requirements
+## ✅ Requirements
 
 Windows 10 or 11, x64. The liquid glass needs WebGL 2, which every machine this targets
 has; the acrylic backdrop needs Windows 11 and is skipped quietly where it is not there.
 
-## Install
+## 📥 Install
 
 Grab the latest from [Releases](../../releases):
 
-- **`ChaosX-1.0.0-Setup.exe`** — the installer. It asks where to put it, and adds a
+- **`ChaosX Mark x1.0-Setup.exe`** — the installer. It asks where to put it, and adds a
   Start Menu and desktop shortcut.
-- **`ChaosX-1.0.0-portable.exe`** — one file, no install. Run it from wherever you like;
-  it keeps its settings and its library cache in your user profile, not next to itself.
+- **`ChaosX Mark x1.0-portable.exe`** — one file, no install. Run it from wherever you
+  like; it keeps its settings and its library cache in your user profile, not next to
+  itself.
 
 Nothing is installed machine-wide and no administrator rights are asked for.
 
-<!-- Optional: a line or two about what first run looks like, and a GIF of the
-     setup wizard picking its first folder. -->
-
-## Building from source
+## 🏗️ Building from source
 
 ```bash
 npm install
@@ -102,7 +160,7 @@ filters that need ffmpeg are unavailable.
 are licensed to whoever bought them. Without them the interface falls through to
 `system-ui` and loses the look it was designed around.
 
-## Keyboard
+## ⌨️ Keyboard
 
 | Key | Action |
 | --- | --- |
@@ -119,24 +177,14 @@ are licensed to whoever bought them. Without them the interface falls through to
 
 Every one of them is listed and rebindable on the Settings page.
 
-## Privacy
+## 🔒 Privacy
 
 ChaosX has no account and sends no analytics. The only network traffic it makes is a
 lyrics lookup for the track you are playing, and the result is cached on disk. Your
 library is a list of paths on your own machine.
 
-## Credits
+## 📄 License
 
-Built by [Ankan](https://github.com/ankan2008) ·
-[@silentchaos_2008](https://www.instagram.com/silentchaos_2008/)
-
-Runs on [Electron](https://www.electronjs.org/), [React](https://react.dev/),
-[Vite](https://vite.dev/), [zustand](https://github.com/pmndrs/zustand),
-[Tone.js](https://tonejs.github.io/), [music-metadata](https://github.com/Borewit/music-metadata),
-[koffi](https://koffi.dev/) and [mpv](https://mpv.io/). The refracting glass is a port of
-a liquid-glass shader.
-
-## License
-
-[MIT](LICENSE). The mpv and ffmpeg binaries, and the two typefaces, carry their own terms
-and are not covered by it.
+[MIT](LICENSE). The mpv and ffmpeg binaries, the vendored glass engine, the icons, and the
+two typefaces carry their own terms and are not covered by it — see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

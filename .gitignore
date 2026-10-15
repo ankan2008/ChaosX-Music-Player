@@ -11,6 +11,20 @@ resources/mpv/*.exe
 resources/ffmpeg/*.exe
 resources/**/*.dll
 
+# Bundled sample wallpapers and live video — third-party artwork and footage that
+# nobody here holds a redistribution licence for. They stay on disk so this machine's
+# app and installer keep working exactly as before, but they must never be published.
+# Without these rules `git add -A` stages all 21 of them.
+#
+# NOTE the consequence: `public/brand/wallpapers/train_upscaled.jpg` is the default
+# backdrop the code asks for (playerStore.ts:391, index.html:58, SetupWizard.tsx:148),
+# so a fresh clone has no file at that path. Either drop a wallpaper you own there, or
+# repoint the default at something generated before anyone builds from the repository.
+resources/wallpapers/
+public/brand/wallpapers/
+# A stray duplicate of one of the above, tracked before this rule existed.
+public/brand/wallpaper.jpg
+
 # Local scratch, agent state and one-off dumps — never part of the app
 .shots/
 .tmp/
